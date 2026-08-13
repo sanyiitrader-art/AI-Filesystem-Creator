@@ -58,6 +58,12 @@ markdown fences, matching exactly this shape:
   }
 }
 
+CRITICAL: Windows paths contain backslashes (e.g. C:\\Users\\name).
+Whenever a path appears anywhere in your JSON output -- in replyText
+or in root_path/directories/files -- every backslash MUST be written
+as a doubled backslash ("\\\\") so the JSON stays valid. Never write a
+single backslash inside a JSON string.
+
 Set "fsRequest" to null for purely conversational turns (greetings,
 clarifying questions, explanations, discussing what was requested
 without being asked to create it). Only populate "fsRequest" when the
@@ -151,6 +157,18 @@ export async function sendTurn(
 }
 
 /**
+ * Fixes the most common way Gemini's JSON-mode output breaks: a raw,
+ * un-doubled backslash inside a string (almost always from a Windows
+ * path like C:\Users\name). Any backslash not already followed by a
+ * valid JSON escape character is doubled so the text becomes valid
+ * JSON. This is a defensive repair layer -- the system instruction
+ * above already asks the model not to do this in the first place.
+ */
+function repairStrayBackslashes(text: string): string {
+  return text.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
+}
+
+/**
  * Strictly parses and structurally validates the model's JSON envelope.
  * Rejects anything malformed rather than guessing -- a malformed or
  * out-of-scope response must never silently become an operation.
@@ -160,7 +178,13 @@ function parseAiTurnResult(rawText: string): AiTurnResult {
   try {
     parsed = JSON.parse(rawText);
   } catch {
-    throw new Error("Gemini's response was not valid JSON.");
+    // First attempt failed -- retry once against a backslash-repaired
+    // version before giving up, since that's the dominant failure mode.
+    try {
+      parsed = JSON.parse(repairStrayBackslashes(rawText));
+    } catch {
+      throw new Error("Gemini's response was not valid JSON.");
+    }
   }
 
   if (typeof parsed !== "object" || parsed === null) {
