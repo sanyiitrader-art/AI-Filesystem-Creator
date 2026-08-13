@@ -1,0 +1,493 @@
+/* Charcoal + mint theme (spec section 37), reproducing the reference
+   UI's layout/proportions (section 26) with the removals from section
+   27 applied and the remaining controls from section 28 kept. */
+
+:root {
+  --color-bg: #161817;
+  --color-bg-elevated: #1e2120;
+  --color-bg-hover: #262a28;
+  --color-bg-input: #1c1f1e;
+  --color-border: #2b2f2d;
+
+  --color-mint: #7ee8c0;
+  --color-mint-dim: #5fc79f;
+  --color-mint-soft: rgba(126, 232, 192, 0.12);
+
+  --color-text-primary: #ecefed;
+  --color-text-secondary: #9aa39d;
+  --color-text-tertiary: #6b7570;
+
+  --color-danger: #e0776d;
+
+  --font-sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  outline: none;
+}
+
+/* ---- App layout ---- */
+
+.app-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* ---- Sidebar (sections 27-29) ---- */
+
+.sidebar {
+  width: 272px;
+  flex-shrink: 0;
+  background: var(--color-bg-elevated);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+}
+
+.sidebar-collapsed {
+  width: 56px;
+  align-items: center;
+  padding-top: 12px;
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sidebar-search-row {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+}
+
+.sidebar-search-icon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.sidebar-search-input {
+  flex: 1;
+  font-size: 13px;
+}
+
+.sidebar-search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* Edit API and New Chat share this exact class so they are always
+   identical in size -- Edit API renders first, sitting above New Chat. */
+.sidebar-action-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  transition: background 0.15s;
+}
+
+.sidebar-action-button:hover {
+  background: var(--color-bg-hover);
+}
+
+.conversation-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: none;
+}
+
+.conversation-list::-webkit-scrollbar {
+  display: none;
+}
+
+.conversation-item {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conversation-item:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.conversation-item-active {
+  background: var(--color-mint-soft);
+  color: var(--color-mint);
+}
+
+/* ---- Chat area (sections 32-40) ---- */
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-scroll-wrapper {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  display: flex;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 780px;
+  margin: 0 auto;
+  width: 100%;
+  scrollbar-width: none;
+}
+
+.chat-messages::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-scrollbar-track {
+  position: absolute;
+  right: 4px;
+  top: 8px;
+  bottom: 8px;
+  width: 6px;
+}
+
+.chat-scrollbar-thumb {
+  position: absolute;
+  width: 100%;
+  border-radius: 3px;
+  background: var(--color-border);
+  cursor: pointer;
+}
+
+.chat-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+.message-row {
+  display: flex;
+  width: 100%;
+}
+
+.message-row-user {
+  justify-content: flex-end;
+}
+
+.message-row-assistant {
+  justify-content: flex-start;
+}
+
+/* Dynamic-width bubble: sized to content, capped at a max width
+   (section 32) -- never a fixed full-width box. */
+.message-bubble {
+  width: fit-content;
+  max-width: 70%;
+  background: var(--color-mint-soft);
+  color: var(--color-text-primary);
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* Unboxed AI response -- no bubble, sits directly on the chat
+   surface (section 33). */
+.message-assistant {
+  max-width: 100%;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+
+.message-paragraph {
+  margin: 0 0 10px 0;
+}
+
+.message-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.message-heading {
+  color: var(--color-mint);
+  margin: 14px 0 6px 0;
+  font-weight: 600;
+}
+
+.message-list {
+  margin: 0 0 10px 0;
+  padding-left: 20px;
+}
+
+.message-list li {
+  margin-bottom: 4px;
+}
+
+.message-inline-code {
+  font-family: var(--font-mono);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+}
+
+.message-code-block {
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 10px 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ---- Message input (sections 30-32) ---- */
+
+.message-input-container {
+  max-width: 780px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 20px 20px 20px;
+}
+
+.attachment-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.attachment-chip-remove {
+  display: flex;
+  color: var(--color-text-tertiary);
+}
+
+.attachment-chip-remove:hover {
+  color: var(--color-danger);
+}
+
+.attach-error {
+  color: var(--color-danger);
+  font-size: 12px;
+  margin: 0 0 8px 0;
+}
+
+.message-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 8px 10px;
+}
+
+.message-input-textarea {
+  flex: 1;
+  resize: none;
+  max-height: 160px;
+  padding: 6px 4px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.message-input-textarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.icon-button-send {
+  background: var(--color-mint);
+  color: var(--color-bg);
+}
+
+.icon-button-send:hover:not(:disabled) {
+  background: var(--color-mint-dim);
+}
+
+/* ---- API key modal ---- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  width: 360px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+.modal-title {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-subtitle {
+  margin: 0 0 14px 0;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.modal-input {
+  width: 100%;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  font-size: 13px;
+  letter-spacing: 2px;
+}
+
+.modal-error {
+  color: var(--color-danger);
+  font-size: 12px;
+  margin: 8px 0 0 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modal-button-secondary,
+.modal-button-primary {
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.modal-button-secondary {
+  color: var(--color-text-secondary);
+}
+
+.modal-button-secondary:hover {
+  background: var(--color-bg-hover);
+}
+
+.modal-button-primary {
+  background: var(--color-mint);
+  color: var(--color-bg);
+}
+
+.modal-button-primary:hover:not(:disabled) {
+  background: var(--color-mint-dim);
+}
+
+.modal-button-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
