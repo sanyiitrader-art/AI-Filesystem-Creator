@@ -64,6 +64,11 @@ without being asked to create it). Only populate "fsRequest" when the
 user has explicitly instructed creation of specific directories/files.
 Never include file contents anywhere in your response.`;
 
+interface GeminiPart {
+  text?: string;
+  thought?: boolean;
+}
+
 interface GeminiContent {
   role: "user" | "model";
   parts: { text: string }[];
@@ -102,14 +107,18 @@ export async function sendTurn(
 
   contents.push({ role: "user", parts: [{ text: fullUserText }] });
 
-  const response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
+  const response = await fetch(GEMINI_ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
       contents,
       generationConfig: {
         responseMimeType: "application/json",
+        thinkingConfig: { thinkingLevel: "low" },
       },
     }),
   });
@@ -123,8 +132,16 @@ export async function sendTurn(
   }
 
   const data = await response.json();
-  const rawText: string | undefined =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const parts: GeminiPart[] | undefined = data?.candidates?.[0]?.content?.parts;
+
+  // Gemini 3.x models may return internal reasoning as separate parts
+  // (marked "thought": true) alongside the real answer. Only the
+  // non-thought parts contain the actual JSON response.
+  const rawText = parts
+    ?.filter((p) => !p.thought && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("")
+    .trim();
 
   if (!rawText) {
     throw new Error("Gemini returned an empty response.");
