@@ -1,12 +1,11 @@
-// Small popup for entering/editing the Gemini API key (spec: "Edit
-// API" button opens this). The key is entered as a password-style
-// input so it always renders as dots -- no reveal/eye toggle, ever,
-// even for an already-saved key. The input starts empty every time
-// the modal opens: typing overwrites the saved key on Save, leaving
-// it blank and closing keeps whatever was already saved.
+// Small popup for entering/editing the Gemini API key. The key is
+// entered as a password-style input so it always renders as dots --
+// no reveal/eye toggle, ever. The actual saved key is never fetched
+// or shown here -- but the placeholder now reflects whether a key is
+// already saved, so the box doesn't look empty/unset when it isn't.
 
-import { useState } from "react";
-import { setApiKey } from "../lib/tauri";
+import { useEffect, useState } from "react";
+import { hasApiKey, setApiKey } from "../lib/tauri";
 
 interface ApiKeyModalProps {
   onClose: () => void;
@@ -16,6 +15,15 @@ export function ApiKeyModal({ onClose }: ApiKeyModalProps) {
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [placeholder, setPlaceholder] = useState("Enter API key");
+
+  useEffect(() => {
+    hasApiKey()
+      .then((exists) => {
+        if (exists) setPlaceholder("Key saved — enter a new key to replace it");
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleSave() {
     const trimmed = value.trim();
@@ -47,7 +55,7 @@ export function ApiKeyModal({ onClose }: ApiKeyModalProps) {
         <input
           type="password"
           className="modal-input"
-          placeholder="Enter API key"
+          placeholder={placeholder}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           autoFocus
