@@ -15,11 +15,6 @@ import type {
 const GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent";
 
-// System instruction encodes the AI-behavior rules from the spec:
-// conversational, context-aware, interprets natural language/trees/
-// attachments into the standardized operation format, never expands
-// scope beyond what the user explicitly asked for, never writes file
-// contents, and must reply in a strict, parseable envelope.
 const SYSTEM_INSTRUCTION = `You are the interpreter for a Windows filesystem structure creator app.
 
 You can ONLY create directories and empty files. You cannot write file
@@ -41,8 +36,9 @@ given name.
 Maintain conversation context: resolve "it", "that", "the other one",
 and similar references using prior turns in this conversation.
 
-You must reply with ONLY a single JSON object, no other text, no
-markdown fences, matching exactly this shape:
+You must reply with ONLY a single JSON object and NOTHING else -- no
+markdown code fences, no commentary before or after it, matching
+exactly this shape:
 
 {
   "replyText": "<natural language reply to show the user>",
@@ -59,16 +55,15 @@ markdown fences, matching exactly this shape:
 }
 
 CRITICAL: Windows paths contain backslashes (e.g. C:\\Users\\name).
-Whenever a path appears anywhere in your JSON output -- in replyText
-or in root_path/directories/files -- every backslash MUST be written
-as a doubled backslash ("\\\\") so the JSON stays valid. Never write a
-single backslash inside a JSON string.
+Whenever a path appears anywhere in your JSON output, every backslash
+MUST be written as a doubled backslash ("\\\\") so the JSON stays
+valid. Never write a single backslash inside a JSON string.
 
-Set "fsRequest" to null for purely conversational turns (greetings,
-clarifying questions, explanations, discussing what was requested
-without being asked to create it). Only populate "fsRequest" when the
-user has explicitly instructed creation of specific directories/files.
-Never include file contents anywhere in your response.`;
+Keep replyText brief and to the point -- do not add extra commentary.
+
+Set "fsRequest" to null for purely conversational turns. Only populate
+"fsRequest" when the user has explicitly instructed creation of
+specific directories/files. Never include file contents.`;
 
 interface GeminiPart {
   text?: string;
@@ -80,12 +75,6 @@ interface GeminiContent {
   parts: { text: string }[];
 }
 
-/**
- * Sends the current user message, prior conversation history, and any
- * attachments to Gemini, and returns a strictly validated AiTurnResult.
- * Throws if no API key is configured or if the model's response cannot
- * be parsed into the expected shape.
- */
 export async function sendTurn(
   history: Message[],
   userMessage: string,
@@ -124,7 +113,8 @@ export async function sendTurn(
       contents,
       generationConfig: {
         responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: "low" },
+        thinkingConfig: { thinkingLevel: "minimal" },
+        maxOutputTokens: 4096,
       },
     }),
   });
@@ -140,9 +130,6 @@ export async function sendTurn(
   const data = await response.json();
   const parts: GeminiPart[] | undefined = data?.candidates?.[0]?.content?.parts;
 
-  // Gemini 3.x models may return internal reasoning as separate parts
-  // (marked "thought": true) alongside the real answer. Only the
-  // non-thought parts contain the actual JSON response.
   const rawText = parts
     ?.filter((p) => !p.thought && typeof p.text === "string")
     .map((p) => p.text)
@@ -156,36 +143,53 @@ export async function sendTurn(
   return parseAiTurnResult(rawText);
 }
 
-/**
- * Fixes the most common way Gemini's JSON-mode output breaks: a raw,
- * un-doubled backslash inside a string (almost always from a Windows
- * path like C:\Users\name). Any backslash not already followed by a
- * valid JSON escape character is doubled so the text becomes valid
- * JSON. This is a defensive repair layer -- the system instruction
- * above already asks the model not to do this in the first place.
- */
+/** Strips markdown code fences Gemini sometimes wraps JSON in, despite
+ *  being told not to. */
+function stripCodeFences(text: string): string {
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text.trim());
+  return fenced ? fenced[1] : text;
+}
+
+/** Keeps only the outermost {...} span, discarding any stray prose
+ *  before or after the actual JSON object. */
+function extractJsonObject(text: string): string {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end < start) return text;
+  return text.slice(start, end + 1);
+}
+
+/** Doubles any raw backslash not already part of a valid JSON escape
+ *  sequence -- fixes unescaped Windows paths like C:\Users\name. */
 function repairStrayBackslashes(text: string): string {
   return text.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
 }
 
-/**
- * Strictly parses and structurally validates the model's JSON envelope.
- * Rejects anything malformed rather than guessing -- a malformed or
- * out-of-scope response must never silently become an operation.
- */
-function parseAiTurnResult(rawText: string): AiTurnResult {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawText);
-  } catch {
-    // First attempt failed -- retry once against a backslash-repaired
-    // version before giving up, since that's the dominant failure mode.
+/** Runs the full repair pipeline and attempts JSON.parse, trying
+ *  progressively more aggressive fixes until one succeeds. */
+function robustJsonParse(rawText: string): unknown {
+  const attempts = [
+    rawText,
+    stripCodeFences(rawText),
+    extractJsonObject(rawText),
+    extractJsonObject(stripCodeFences(rawText)),
+    repairStrayBackslashes(rawText),
+    repairStrayBackslashes(extractJsonObject(stripCodeFences(rawText))),
+  ];
+
+  for (const attempt of attempts) {
     try {
-      parsed = JSON.parse(repairStrayBackslashes(rawText));
+      return JSON.parse(attempt);
     } catch {
-      throw new Error("Gemini's response was not valid JSON.");
+      continue;
     }
   }
+
+  throw new Error("Gemini's response was not valid JSON.");
+}
+
+function parseAiTurnResult(rawText: string): AiTurnResult {
+  const parsed = robustJsonParse(rawText);
 
   if (typeof parsed !== "object" || parsed === null) {
     throw new Error("Gemini's response was not a JSON object.");
