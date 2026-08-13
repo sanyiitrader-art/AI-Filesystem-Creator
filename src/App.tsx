@@ -97,6 +97,11 @@ export default function App() {
     const userMessage = makeMessage("user", displayText || text);
     const isFirstMessage = conversation.messages.length === 0;
 
+    // History as it stood BEFORE this new message -- sendTurn appends
+    // the new message itself, so passing anything that already
+    // includes it would send it to Gemini twice in a row.
+    const historyBeforeThisTurn = conversation.messages;
+
     let working: Conversation = {
       ...conversation,
       title: isFirstMessage ? deriveTitle(text) : conversation.title,
@@ -107,7 +112,7 @@ export default function App() {
     setSending(true);
 
     try {
-      const turn = await sendTurn(working.messages, text, attachments);
+      const turn = await sendTurn(historyBeforeThisTurn, text, attachments);
       let assistantText = turn.replyText;
 
       if (turn.fsRequest) {
@@ -115,12 +120,13 @@ export default function App() {
         const summary = summarizeResultsForAi(results);
 
         // Give the AI the execution outcome so it can explain any
-        // errors naturally (section 20), then use that explanation
-        // as the message actually shown to the user.
+        // errors naturally (section 20). History here stops BEFORE
+        // the summary -- sendTurn appends `summary` itself as the
+        // new user turn, so it must not already be in this list.
         const followUpHistory: Message[] = [
-          ...working.messages,
+          ...historyBeforeThisTurn,
+          userMessage,
           makeMessage("assistant", turn.replyText),
-          makeMessage("user", summary),
         ];
         const followUp = await sendTurn(followUpHistory, summary, []);
         assistantText = followUp.replyText;
