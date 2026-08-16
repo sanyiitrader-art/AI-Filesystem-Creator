@@ -3,10 +3,19 @@
 // user message -> aiClient.sendTurn -> optional executeFsRequest ->
 // structured result folded back to the AI as context -> persisted via
 // saveConversation. Wires Sidebar and ChatArea together.
+//
+// Now also owns the AI <-> editor view switch. EditorView stays
+// mounted at all times once entered (hidden via CSS, not unmounted)
+// so its internal state -- workspace, open file, nav history, auto
+// save, unsaved edits -- survives switching back to the AI screen,
+// the same guarantee Android's EditorSessionState provided, achieved
+// here without a separate state-lifting file.
 
 import { useEffect, useState } from "react";
+import { FileText } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
+import { EditorView } from "./components/editor/EditorView";
 import { sendTurn } from "./lib/aiClient";
 import {
   createConversation,
@@ -25,9 +34,6 @@ function makeMessage(role: Message["role"], content: string): Message {
   };
 }
 
-/** Turns operation results into a compact, factual summary the AI can
- *  read and explain naturally to the user (spec section 20) -- never
- *  shown to the user directly in this raw form. */
 function summarizeResultsForAi(
   results: Awaited<ReturnType<typeof executeFsRequest>>
 ): string {
@@ -50,20 +56,21 @@ function summarizeResultsForAi(
     : "[Execution result]\nNo items were created.";
 }
 
-/** Derives a short title from the first user message, for the sidebar. */
 function deriveTitle(firstUserText: string): string {
   const trimmed = firstUserText.trim();
   if (!trimmed) return "New chat";
   return trimmed.length > 40 ? `${trimmed.slice(0, 40)}...` : trimmed;
 }
 
+type TopLevelView = "ai" | "editor";
+
 export default function App() {
+  const [view, setView] = useState<TopLevelView>("ai");
   const [collapsed, setCollapsed] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [sending, setSending] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
 
-  // Start with a fresh conversation on first load.
   useEffect(() => {
     createConversation().then(setConversation).catch(() => {});
   }, []);
@@ -97,9 +104,6 @@ export default function App() {
     const userMessage = makeMessage("user", displayText || text);
     const isFirstMessage = conversation.messages.length === 0;
 
-    // History as it stood BEFORE this new message -- sendTurn appends
-    // the new message itself, so passing anything that already
-    // includes it would send it to Gemini twice in a row.
     const historyBeforeThisTurn = conversation.messages;
 
     let working: Conversation = {
@@ -119,10 +123,6 @@ export default function App() {
         const results = await executeFsRequest(turn.fsRequest);
         const summary = summarizeResultsForAi(results);
 
-        // Give the AI the execution outcome so it can explain any
-        // errors naturally (section 20). History here stops BEFORE
-        // the summary -- sendTurn appends `summary` itself as the
-        // new user turn, so it must not already be in this list.
         const followUpHistory: Message[] = [
           ...historyBeforeThisTurn,
           userMessage,
@@ -156,22 +156,40 @@ export default function App() {
   }
 
   return (
-    <div className="app-layout">
-      <Sidebar
-        collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((c) => !c)}
-        activeConversationId={conversation?.id ?? null}
-        onSelectConversation={handleSelectConversation}
-        onNewChat={handleNewChat}
-        refreshToken={refreshToken}
-      />
-      {conversation && (
-        <ChatArea
-          messages={conversation.messages}
-          onSend={handleSend}
-          sending={sending}
+    <div className="app-root">
+      <div className="app-layout" style={{ display: view === "ai" ? "flex" : "none" }}>
+        <Sidebar
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((c) => !c)}
+          activeConversationId={conversation?.id ?? null}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={handleNewChat}
+          refreshToken={refreshToken}
         />
-      )}
+        <div className="app-ai-column">
+          <div className="app-ai-topbar">
+            <button
+              className="app-editor-entry-btn"
+              onClick={() => setView("editor")}
+              aria-label="Open editor"
+              title="Open editor"
+            >
+              <FileText size={18} />
+            </button>
+          </div>
+          {conversation && (
+            <ChatArea
+              messages={conversation.messages}
+              onSend={handleSend}
+              sending={sending}
+            />
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: view === "editor" ? "block" : "none", height: "100%" }}>
+        <EditorView onBackToAi={() => setView("ai")} />
+      </div>
     </div>
   );
 }

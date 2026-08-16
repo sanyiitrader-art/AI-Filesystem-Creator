@@ -63,13 +63,48 @@ textarea {
   outline: none;
 }
 
-/* ---- App layout ---- */
+/* ---- App root / view switching ---- */
 
-.app-layout {
-  display: flex;
+.app-root {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+}
+
+.app-layout {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.app-ai-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-ai-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-editor-entry-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.app-editor-entry-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
 }
 
 /* ---- Sidebar (sections 27-29) ---- */
@@ -143,8 +178,6 @@ textarea {
   color: var(--color-text-tertiary);
 }
 
-/* Edit API and New Chat share this exact class so they are always
-   identical in size -- Edit API renders first, sitting above New Chat. */
 .sidebar-action-button {
   display: flex;
   align-items: center;
@@ -265,8 +298,6 @@ textarea {
   justify-content: flex-start;
 }
 
-/* Dynamic-width bubble: sized to content, capped at a max width
-   (section 32) -- never a fixed full-width box. */
 .message-bubble {
   width: fit-content;
   max-width: 70%;
@@ -280,8 +311,6 @@ textarea {
   line-height: 1.5;
 }
 
-/* Unboxed AI response -- no bubble, sits directly on the chat
-   surface (section 33). */
 .message-assistant {
   max-width: 100%;
   line-height: 1.6;
@@ -490,4 +519,538 @@ textarea {
 .modal-button-primary:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* ==================================================================
+   EDITOR (Windows integration)
+   ================================================================== */
+
+.editor-root {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ---- Left rail ---- */
+
+.editor-rail {
+  width: 52px;
+  flex-shrink: 0;
+  background: var(--color-bg-elevated);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 4px;
+}
+
+.editor-rail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.editor-rail-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.editor-rail-btn-active {
+  background: var(--color-mint-soft);
+  color: var(--color-mint);
+}
+
+.editor-rail-btn-inert {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.editor-rail-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--color-border);
+  margin: 6px 0;
+}
+
+.editor-rail-spacer {
+  flex: 1;
+}
+
+/* ---- Explorer panel (toggleable desktop panel, stays open) ---- */
+
+.explorer-panel {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--color-bg-elevated);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.explorer-panel-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.explorer-panel-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.explorer-panel-blank-zone {
+  min-height: 200px;
+}
+
+.explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.explorer-row:hover {
+  background: var(--color-bg-hover);
+}
+
+.explorer-row-selected {
+  background: var(--color-mint-soft);
+  color: var(--color-mint);
+}
+
+.explorer-row-folder-icon {
+  color: var(--color-mint);
+  margin-left: 2px;
+}
+
+.explorer-row-file-icon {
+  color: var(--color-text-secondary);
+}
+
+.explorer-row-name {
+  margin-left: 4px;
+}
+
+.explorer-inline-field {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 2px 8px;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-mint);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.explorer-inline-field-shake {
+  border-color: var(--color-danger);
+  animation: explorer-shake 0.5s;
+}
+
+@keyframes explorer-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
+/* ---- Right-click context menu ---- */
+
+.explorer-context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.explorer-context-item {
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.explorer-context-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.explorer-context-item-disabled {
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+.explorer-context-item-disabled:hover {
+  background: none;
+}
+
+.explorer-context-item-danger {
+  color: var(--color-danger);
+}
+
+/* ---- Delete confirmation dialog (shared style w/ menu dialogs) ---- */
+
+.editor-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+.editor-dialog {
+  width: 340px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+}
+
+.editor-dialog h4 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.editor-dialog p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+}
+
+.editor-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.editor-dialog-cancel,
+.editor-dialog-delete {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.editor-dialog-cancel {
+  color: var(--color-text-secondary);
+}
+
+.editor-dialog-cancel:hover {
+  background: var(--color-bg-hover);
+}
+
+.editor-dialog-delete {
+  background: var(--color-danger);
+  color: var(--color-bg);
+}
+
+/* ---- Main editor column ---- */
+
+.editor-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.editor-topbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.editor-topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.editor-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.editor-icon-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.editor-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.editor-search-input {
+  flex: 1;
+  margin-left: 6px;
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.editor-search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.editor-current-filename {
+  margin-top: 4px;
+  padding-left: 62px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.editor-search-text-toggle {
+  display: inline-block;
+  margin: 6px 0 0 62px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.editor-search-text-toggle:hover {
+  background: var(--color-bg-hover);
+}
+
+.editor-search-text-toggle-active {
+  background: var(--color-mint-soft);
+  color: var(--color-mint);
+}
+
+.editor-search-results {
+  margin-top: 6px;
+  margin-left: 62px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.editor-search-empty {
+  font-size: 12.5px;
+  color: var(--color-text-secondary);
+  padding: 4px 0;
+}
+
+.editor-search-result-item {
+  padding: 6px 4px;
+  font-size: 12.5px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-search-result-item:hover {
+  background: var(--color-bg-hover);
+}
+
+/* ---- Start screen ---- */
+
+.editor-start {
+  padding: 32px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.editor-start h3 {
+  margin: 0 0 10px 0;
+  font-size: 15px;
+  color: var(--color-text-primary);
+}
+
+.editor-start-action {
+  display: block;
+  padding: 6px 0;
+  font-size: 13.5px;
+  color: var(--color-mint);
+}
+
+.editor-start-action:hover {
+  text-decoration: underline;
+}
+
+.editor-start-recent {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 4px 0 0 0;
+}
+
+.editor-start-link {
+  color: var(--color-mint);
+  cursor: pointer;
+}
+
+.editor-start-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- Unsupported (binary) file message ---- */
+
+.editor-unsupported {
+  flex: 1;
+  padding: 32px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+/* ---- Editor menu overlay ---- */
+
+.editor-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+}
+
+.editor-menu {
+  position: absolute;
+  top: 44px;
+  left: 56px;
+  width: 220px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.editor-menu-item {
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.editor-menu-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.editor-menu-autosave {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.editor-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  color: var(--color-bg);
+}
+
+.editor-checkbox-checked {
+  background: var(--color-mint);
+  border-color: var(--color-mint);
+}
+
+/* ---- Text editor surface ---- */
+
+.editor-text-empty {
+  flex: 1;
+  padding: 16px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.editor-text-container {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
+.editor-text-highlight-layer,
+.editor-text-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+}
+
+.editor-text-highlight-layer {
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  pointer-events: none;
+}
+
+.editor-text-input {
+  background: transparent;
+  color: transparent;
+  caret-color: var(--color-text-primary);
+  resize: none;
+}
+
+.editor-text-input::selection {
+  background: var(--color-mint-soft);
+}
+
+.syntax-keyword {
+  color: var(--color-mint);
+}
+
+.syntax-string {
+  color: #e0b96a;
+}
+
+.syntax-comment {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.syntax-number {
+  color: #6baee0;
+}
+
+.syntax-function {
+  color: #d9a6e8;
+}
+
+.syntax-search-highlight {
+  background: rgba(126, 232, 192, 0.35);
+  border-radius: 2px;
 }
