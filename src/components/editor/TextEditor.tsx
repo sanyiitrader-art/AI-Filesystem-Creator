@@ -37,8 +37,6 @@ export function TextEditor({
 
   const extension = openFile ? (openFile.name.split(".").pop() ?? "") : "";
 
-  // Reset highlight whenever the open file changes -- same as Android,
-  // a stale highlight must never carry over between files.
   useEffect(() => {
     setActiveHighlight(null);
   }, [openFile?.path]);
@@ -55,8 +53,6 @@ export function TextEditor({
 
     setActiveHighlight({ start, end });
 
-    // Scroll the match into view: measure via a hidden mirror of text
-    // up to the match, using the textarea's own line-height metrics.
     const textarea = textareaRef.current;
     if (textarea) {
       const before = openFile.content.slice(0, start);
@@ -80,8 +76,6 @@ export function TextEditor({
       return segments.map((seg, i) => renderSegment(seg, i));
     }
 
-    // Splice the search-match highlight span on top of the syntax
-    // segments by walking character offsets.
     const nodes: JSX.Element[] = [];
     let pos = 0;
     let key = 0;
@@ -139,10 +133,7 @@ export function TextEditor({
         spellCheck={false}
         onScroll={syncScroll}
         onMouseDown={() => setActiveHighlight(null)}
-        onKeyDown={(e) => {
-          // Any key press repositions the cursor -- clear the search
-          // highlight the same way a click does, matching the Android
-          // "continue typing clears it" behavior.
+        onKeyDown={() => {
           if (activeHighlight) setActiveHighlight(null);
         }}
         onChange={(e) => onContentChange(e.target.value)}

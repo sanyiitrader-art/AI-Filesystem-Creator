@@ -39,7 +39,6 @@ export function ExplorerPanel({
   visible,
   tree,
   selectedPath,
-  onToggleExpand,
   onSelectNode,
   onCreateFile,
   onCreateFolder,
@@ -66,8 +65,6 @@ export function ExplorerPanel({
       const name = inlineEdit.initialText;
       const dotIndex = !inlineEdit.isDirectory ? name.lastIndexOf(".") : -1;
       setFieldValue(name);
-      // Pre-select up to (not including) the extension for files,
-      // whole name for folders -- same as Android's initial selection.
       requestAnimationFrame(() => {
         fieldRef.current?.focus();
         fieldRef.current?.setSelectionRange(0, dotIndex > 0 ? dotIndex : name.length);
@@ -132,9 +129,6 @@ export function ExplorerPanel({
       <div
         className="explorer-panel-tree"
         onClick={(e) => {
-          // Tapping empty space commits/discards the active inline
-          // edit, same as the Android upgrade -- but only when the
-          // click didn't originate on a row or the field itself.
           if (e.target === e.currentTarget && inlineEdit) commitOrCancel();
         }}
       >
@@ -146,7 +140,7 @@ export function ExplorerPanel({
             return (
               <InlineField
                 key={node.path}
-                depth={node.depth ?? 0}
+                depth={node.depth}
                 value={fieldValue}
                 onChange={setFieldValue}
                 onKeyDown={handleFieldKeyDown}
@@ -166,7 +160,7 @@ export function ExplorerPanel({
               />
               {inlineEdit && !inlineEdit.isRename && inlineEdit.parentPath === node.path && (
                 <InlineField
-                  depth={(node.depth ?? 0) + 1}
+                  depth={node.depth + 1}
                   value={fieldValue}
                   onChange={setFieldValue}
                   onKeyDown={handleFieldKeyDown}
@@ -272,7 +266,7 @@ function ExplorerRow({
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
-  const depth = node.depth ?? 0;
+  const depth = node.depth;
   return (
     <div
       className={`explorer-row${isSelected ? " explorer-row-selected" : ""}`}
