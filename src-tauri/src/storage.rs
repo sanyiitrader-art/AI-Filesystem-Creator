@@ -1,12 +1,3 @@
-// Local persistence layer (spec sections 14, 16, 25).
-// Uses the OS-appropriate Tauri app data directory -- no cloud
-// infrastructure, no database dependency, just JSON on disk, since
-// this is intentionally a small application (section 44).
-//
-// Layout under the app data dir:
-//   conversations/<id>.json   -- one file per conversation, full history
-//   settings.json             -- { "gemini_api_key": "..." }
-
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -148,16 +139,26 @@ pub fn save_conversation(app: &AppHandle, conversation: &Conversation) -> io::Re
     fs::write(path, raw)
 }
 
-/// Deletes a saved conversation's JSON file. Returns Ok(()) even if
-/// the file was already gone (idempotent delete), consistent with
-/// how the rest of this module treats "not found" as a non-error
-/// state for read-adjacent operations.
 pub fn delete_conversation(app: &AppHandle, id: &str) -> io::Result<()> {
     let path = conversations_dir(app)?.join(format!("{id}.json"));
     if path.exists() {
         fs::remove_file(path)?;
     }
     Ok(())
+}
+
+pub fn set_api_key(app: &AppHandle, key: &str) -> io::Result<()> {
+    let mut settings = read_settings(app)?;
+    settings.gemini_api_key = Some(key.to_string());
+    write_settings(app, &settings)
+}
+
+pub fn has_api_key(app: &AppHandle) -> io::Result<bool> {
+    Ok(read_settings(app)?.gemini_api_key.is_some())
+}
+
+pub fn get_api_key(app: &AppHandle) -> io::Result<Option<String>> {
+    Ok(read_settings(app)?.gemini_api_key)
 }
 
 fn now_iso8601() -> String {
