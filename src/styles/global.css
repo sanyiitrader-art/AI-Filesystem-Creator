@@ -82,6 +82,7 @@ textarea {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;   /* add this line */
 }
 
 .app-ai-topbar {
@@ -239,6 +240,7 @@ textarea {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;   /* add this line */
 }
 
 .chat-scroll-wrapper {

@@ -60,10 +60,22 @@ export function ChatArea({ messages, onSend, sending }: ChatAreaProps) {
     };
   }, []);
 
-  // Auto-scroll to bottom as new content streams in.
+// On a new user message, bring it to the TOP of the visible area.
+  // On a new AI reply, reveal it (scroll to bottom). Only fires once
+  // per new message -- never continuously forces scroll, so manual
+  // scrolling stays free at all other times.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el || messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    const lastEl = el.lastElementChild as HTMLElement | null;
+    if (!lastEl) return;
+
+    if (lastMessage.role === "user") {
+      el.scrollTop = lastEl.offsetTop - 12;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages.length]);
 
   function handleThumbMouseDown(e: React.MouseEvent) {
