@@ -46,6 +46,10 @@ export function saveConversation(
   return invoke("save_conversation", { conversation });
 }
 
+export function deleteConversation(id: string): Promise<void> {
+  return invoke("delete_conversation", { id });
+}
+
 // ---- API key ----
 
 export function setApiKey(key: string): Promise<void> {

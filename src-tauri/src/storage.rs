@@ -37,9 +37,6 @@ pub struct Conversation {
     pub updated_at: String,
 }
 
-/// Lightweight listing shape for the sidebar -- deliberately excludes
-/// `messages` so listing/searching stays cheap regardless of how long
-/// individual conversations get.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationSummary {
     pub id: String,
@@ -86,8 +83,6 @@ fn write_settings(app: &AppHandle, settings: &Settings) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     fs::write(path, raw)
 }
-
-// ---- Conversations ----
 
 pub fn list_conversations(app: &AppHandle) -> io::Result<Vec<ConversationSummary>> {
     let dir = conversations_dir(app)?;
@@ -153,25 +148,19 @@ pub fn save_conversation(app: &AppHandle, conversation: &Conversation) -> io::Re
     fs::write(path, raw)
 }
 
-// ---- API key ----
-
-pub fn set_api_key(app: &AppHandle, key: &str) -> io::Result<()> {
-    let mut settings = read_settings(app)?;
-    settings.gemini_api_key = Some(key.to_string());
-    write_settings(app, &settings)
-}
-
-pub fn has_api_key(app: &AppHandle) -> io::Result<bool> {
-    Ok(read_settings(app)?.gemini_api_key.is_some())
-}
-
-pub fn get_api_key(app: &AppHandle) -> io::Result<Option<String>> {
-    Ok(read_settings(app)?.gemini_api_key)
+/// Deletes a saved conversation's JSON file. Returns Ok(()) even if
+/// the file was already gone (idempotent delete), consistent with
+/// how the rest of this module treats "not found" as a non-error
+/// state for read-adjacent operations.
+pub fn delete_conversation(app: &AppHandle, id: &str) -> io::Result<()> {
+    let path = conversations_dir(app)?.join(format!("{id}.json"));
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
 }
 
 fn now_iso8601() -> String {
-    // Minimal timestamp without pulling in a full datetime crate;
-    // sufficient for sort-by-recency and display purposes.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

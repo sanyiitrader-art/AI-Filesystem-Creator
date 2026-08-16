@@ -5,17 +5,17 @@
 // Windows differences from Android, per the integration spec:
 // - No swipe gestures; navigation back to AI is an explicit button
 //   (rendered by EditorRail).
-// - Explorer is a toggleable persistent side panel (not an overlay),
-//   handled by ExplorerPanel.tsx.
-// - No lifecycle "onResume" concept on desktop -- the resume-refresh
-//   behavior we added on Android is replaced here with: refresh the
-//   tree every time the Explorer panel is opened (same as Android's
-//   second safety net), plus a refresh on window focus regain, which
-//   is the closest desktop equivalent to "app returned to foreground."
-// - This component is meant to stay mounted (hidden via CSS) rather
-//   than unmounted when switching to the AI view -- App.tsx controls
-//   visibility, not mount/unmount -- so no separate "session state"
-//   file is needed the way Android's EditorSessionState.kt was.
+// - Explorer is a toggleable persistent side panel that stays open
+//   until its own toolbar button is clicked again -- selecting a
+//   file must NOT close it (unlike Android's temporary overlay).
+// - Real-time refresh: while the panel is open, the tree is polled
+//   periodically so files/folders created by another app show up
+//   without needing to close and reopen the panel. This is a
+//   lightweight interval, not a full filesystem watcher, keeping the
+//   editor's "stay lightweight" constraint intact.
+// - This component stays mounted (hidden via CSS) rather than
+//   unmounted when switching to the AI view -- App.tsx controls
+//   visibility, not mount/unmount.
 
 import { useCallback, useEffect, useState } from "react";
 import * as editorFs from "../../lib/editorFs";
@@ -75,6 +75,8 @@ function isUnderOrEqual(targetPath: string, node: EditorNode): boolean {
   return node.children.some(search);
 }
 
+const POLL_INTERVAL_MS = 3000;
+
 export function EditorView({ onBackToAi }: EditorViewProps) {
   const [workspaceRoot, setWorkspaceRootState] = useState<string | null>(null);
   const [tree, setTree] = useState<EditorNode | null>(null);
@@ -97,28 +99,25 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
       const newTree = await editorFs.loadTree(workspaceRoot).catch(() => null);
       if (!newTree) return;
 
-      if (!preserveExpansion || !tree) {
-        setTree(newTree);
-        return;
-      }
+      setTree((current) => {
+        if (!preserveExpansion || !current) return newTree;
 
-      const expandedPaths = new Set<string>();
-      (function collect(n: EditorNode) {
-        if (n.isExpanded) expandedPaths.add(n.path);
-        n.children.forEach(collect);
-      })(tree);
+        const expandedPaths = new Set<string>();
+        (function collect(n: EditorNode) {
+          if (n.isExpanded) expandedPaths.add(n.path);
+          n.children.forEach(collect);
+        })(current);
 
-      (function applyExpansion(n: EditorNode): EditorNode {
-        return {
-          ...n,
-          isExpanded: expandedPaths.has(n.path),
-          children: n.children.map(applyExpansion),
-        };
-      })(newTree);
+        (function applyExpansion(n: EditorNode): EditorNode {
+          n.isExpanded = expandedPaths.has(n.path);
+          n.children.forEach(applyExpansion);
+          return n;
+        })(newTree);
 
-      setTree(newTree);
+        return newTree;
+      });
     },
-    [workspaceRoot, tree]
+    [workspaceRoot]
   );
 
   // Desktop equivalent of Android's onResume tree refresh: catches
@@ -131,6 +130,19 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [refreshTree]);
+
+  // Real-time update: while the Explorer panel is open, poll the tree
+  // periodically so external changes (another app creating/deleting
+  // files in the same folder) show up without the user needing to
+  // close and reopen the panel. Stops entirely when the panel is
+  // closed, so this never runs in the background needlessly.
+  useEffect(() => {
+    if (!explorerOpen || !workspaceRoot) return;
+    const interval = setInterval(() => {
+      refreshTree();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [explorerOpen, workspaceRoot, refreshTree]);
 
   async function setWorkspaceRoot(path: string) {
     setWorkspaceRootState(path);
@@ -150,7 +162,9 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
       setUnsupportedMessage(`"${name}" doesn't look like a text file and can't be opened here.`);
       setOpenFile(null);
       setSelectedPath(path);
-      setExplorerOpen(false);
+      // Explorer intentionally stays open here -- Windows panel only
+      // closes via its own toolbar toggle, never as a side effect of
+      // selecting something.
       return;
     }
 
@@ -158,7 +172,10 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
     setUnsupportedMessage(null);
     setOpenFile({ path, name, content, isDirty: path in unsavedEdits });
     setSelectedPath(path);
-    setExplorerOpen(false);
+    // Explorer stays open -- fixed bug: this used to call
+    // setExplorerOpen(false) here, which was leftover Android overlay
+    // behavior that never belonged in the Windows toggleable-panel
+    // spec. The panel now only closes when its own button is clicked.
     if (addToHistory) setNavHistory((h) => navigateTo(h, path));
   }
 
@@ -324,10 +341,6 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
 
   async function handleOpenFileDialog() {
     await editorFs.pickFile();
-    // Windows Open File just opens the picker; unlike Android there's
-    // no SAF permission grant step needed. Deliberately not opening
-    // the picked file directly into a fresh workspace here yet --
-    // see note in EditorMenu.tsx wiring below.
   }
 
   return (

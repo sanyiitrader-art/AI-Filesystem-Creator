@@ -5,12 +5,6 @@
 // write/rename/delete access to files the user explicitly picks via
 // a native dialog -- a genuinely different, broader capability that
 // must not share (or accidentally loosen) the AI's constrained path.
-//
-// Unlike the Android version, there is no SAF/content-URI layer here
-// -- Windows desktop apps have direct filesystem access, so this
-// operates on plain paths. The dialog plugin supplies those paths
-// only through an explicit user-driven native picker, never invented
-// by the app itself.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -18,16 +12,19 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
+// serde(rename_all = "camelCase") makes the JSON sent to the frontend
+// use isDirectory/parentPath/newPath etc. -- matching editorTypes.ts
+// exactly. Without this, Rust's default snake_case output
+// (is_directory, parent_path) silently didn't match the camelCase
+// TS interfaces, so every node's isDirectory read as undefined and
+// fell through to "treat as file" everywhere in the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EditorNode {
     pub path: String,
     pub name: String,
     pub is_directory: bool,
     pub parent_path: Option<String>,
-    // Tracked here (rather than computed on the frontend) so it's
-    // always consistent with the actual tree shape returned, and so
-    // ExplorerPanel.tsx's indentation logic doesn't need to re-derive
-    // it by walking the tree itself.
     pub depth: u32,
     pub children: Vec<EditorNode>,
 }
@@ -41,16 +38,16 @@ pub enum EditorCreateResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum EditorRenameResult {
-    Success { new_path: String },
+    Success {
+        #[serde(rename = "new_path")]
+        new_path: String,
+    },
     DuplicateName,
     Failure,
 }
 
-/// Loads the full nested tree under root_path. Mirrors the Android
-/// WorkspaceStore.loadTree()'s recursive structure and sort order
-/// (directories first, then alphabetical).
 #[tauri::command]
 pub fn editor_load_tree(root_path: String) -> Result<EditorNode, String> {
     build_node(Path::new(&root_path), None, 0)
@@ -106,9 +103,6 @@ fn build_node(path: &Path, parent_path: Option<String>, depth: u32) -> Option<Ed
     })
 }
 
-/// Sniffs the first few KB for binary content -- same heuristic as
-/// the Android version (null byte, or >10% non-printable bytes),
-/// deliberately not based on file extension.
 #[tauri::command]
 pub fn editor_is_likely_binary(path: String) -> Result<bool, String> {
     let bytes = match fs::read(&path) {
@@ -174,11 +168,6 @@ pub fn editor_create_folder(parent_path: String, name: String) -> Result<EditorC
     }
 }
 
-/// Renames a file or folder within the same parent. Takes
-/// parent_path + old_name (not a bare full path) for the same reason
-/// the fixed Android version does: locating the item via its parent
-/// is the reliable pattern, and returning the real resulting path
-/// lets the caller patch in-memory state without a stale reference.
 #[tauri::command]
 pub fn editor_rename(
     parent_path: String,
@@ -210,7 +199,6 @@ pub fn editor_rename(
     }
 }
 
-/// Deletes a file, or a folder and everything inside it.
 #[tauri::command]
 pub fn editor_delete(path: String) -> Result<bool, String> {
     let target = Path::new(&path);
@@ -222,9 +210,6 @@ pub fn editor_delete(path: String) -> Result<bool, String> {
     Ok(result.is_ok())
 }
 
-/// Finds a unique root workspace folder name starting from "new
-/// folder", appending " (2)", " (3)", etc. -- same behavior as the
-/// Android version's menu New File/New Folder workspace creation.
 #[tauri::command]
 pub fn editor_unique_workspace_folder_name(parent_path: String) -> Result<String, String> {
     let parent = Path::new(&parent_path);
@@ -242,10 +227,6 @@ pub fn editor_unique_workspace_folder_name(parent_path: String) -> Result<String
     }
 }
 
-/// Opens the native "pick a folder" dialog. Returns None if the user
-/// cancels. This is the only way editor_fs ever learns about a path
-/// outside what the user has already opened -- never invented by the
-/// app itself.
 #[tauri::command]
 pub async fn editor_pick_folder(app: AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -255,7 +236,6 @@ pub async fn editor_pick_folder(app: AppHandle) -> Result<Option<String>, String
     rx.await.map_err(|e| e.to_string())
 }
 
-/// Opens the native "pick a file" dialog. Returns None if cancelled.
 #[tauri::command]
 pub async fn editor_pick_file(app: AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();

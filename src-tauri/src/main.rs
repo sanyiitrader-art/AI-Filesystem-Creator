@@ -16,6 +16,7 @@ fn main() {
             commands::get_conversation,
             commands::create_conversation,
             commands::save_conversation,
+            commands::delete_conversation,
             commands::set_api_key,
             commands::has_api_key,
             commands::get_api_key,

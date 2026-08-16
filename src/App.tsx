@@ -4,12 +4,10 @@
 // structured result folded back to the AI as context -> persisted via
 // saveConversation. Wires Sidebar and ChatArea together.
 //
-// Now also owns the AI <-> editor view switch. EditorView stays
-// mounted at all times once entered (hidden via CSS, not unmounted)
-// so its internal state -- workspace, open file, nav history, auto
-// save, unsaved edits -- survives switching back to the AI screen,
-// the same guarantee Android's EditorSessionState provided, achieved
-// here without a separate state-lifting file.
+// Also owns the AI <-> editor view switch. EditorView stays mounted
+// at all times once entered (hidden via CSS, not unmounted) so its
+// internal state -- workspace, open file, nav history, auto save,
+// unsaved edits -- survives switching back to the AI screen.
 
 import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";

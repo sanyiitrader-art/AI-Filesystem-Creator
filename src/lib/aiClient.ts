@@ -12,8 +12,12 @@ import type {
   Message,
 } from "./types";
 
+// Switched from gemini-3.5-flash to gemini-3.5-flash-lite: 1000
+// requests/day vs 120/day, well suited to this app's structured,
+// low-complexity interpretation task -- same change already made on
+// the Android version.
 const GEMINI_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
 
 const SYSTEM_INSTRUCTION = `You are the interpreter for a Windows filesystem structure creator app.
 
@@ -143,15 +147,11 @@ export async function sendTurn(
   return parseAiTurnResult(rawText);
 }
 
-/** Strips markdown code fences Gemini sometimes wraps JSON in, despite
- *  being told not to. */
 function stripCodeFences(text: string): string {
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text.trim());
   return fenced ? fenced[1] : text;
 }
 
-/** Keeps only the outermost {...} span, discarding any stray prose
- *  before or after the actual JSON object. */
 function extractJsonObject(text: string): string {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -159,14 +159,10 @@ function extractJsonObject(text: string): string {
   return text.slice(start, end + 1);
 }
 
-/** Doubles any raw backslash not already part of a valid JSON escape
- *  sequence -- fixes unescaped Windows paths like C:\Users\name. */
 function repairStrayBackslashes(text: string): string {
   return text.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
 }
 
-/** Runs the full repair pipeline and attempts JSON.parse, trying
- *  progressively more aggressive fixes until one succeeds. */
 function robustJsonParse(rawText: string): unknown {
   const attempts = [
     rawText,

@@ -1,12 +1,18 @@
-// Left sidebar (spec sections 27-29): Edit API button (same size as
-// New Chat, positioned above it), New Chat, search-saved-conversations,
-// panel toggle, and the conversation list itself. No Home tab, no
-// account/profile area, no navigation tabs -- all removed per spec.
-
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Search, PanelLeftClose, PanelLeft } from "lucide-react";
+import {
+  Edit3,
+  Plus,
+  Search,
+  PanelLeftClose,
+  PanelLeft,
+  Trash2,
+} from "lucide-react";
 import { ApiKeyModal } from "./ApiKeyModal";
-import { listConversations, searchConversations } from "../lib/tauri";
+import {
+  listConversations,
+  searchConversations,
+  deleteConversation,
+} from "../lib/tauri";
 import type { ConversationSummary } from "../lib/types";
 
 interface SidebarProps {
@@ -15,8 +21,6 @@ interface SidebarProps {
   activeConversationId: string | null;
   onSelectConversation: (id: string) => void;
   onNewChat: () => void;
-  /** Bumped by App.tsx whenever a conversation is created/renamed/saved,
-   *  so the list refreshes without the sidebar owning save logic itself. */
   refreshToken: number;
 }
 
@@ -31,12 +35,25 @@ export function Sidebar({
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showApiModal, setShowApiModal] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
+  function refresh() {
     const query = searchQuery.trim();
     const load = query ? searchConversations(query) : listConversations();
     load.then(setConversations).catch(() => setConversations([]));
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, refreshToken]);
+
+  async function handleConfirmDelete() {
+    if (!pendingDeleteId) return;
+    await deleteConversation(pendingDeleteId);
+    setPendingDeleteId(null);
+    refresh();
+  }
 
   if (collapsed) {
     return (
@@ -77,7 +94,7 @@ export function Sidebar({
         className="sidebar-action-button"
         onClick={() => setShowApiModal(true)}
       >
-        <Pencil size={16} />
+        <Edit3 size={16} />
         <span>Edit API</span>
       </button>
 
@@ -88,21 +105,59 @@ export function Sidebar({
 
       <div className="conversation-list">
         {conversations.map((c) => (
-          <button
+          <div
             key={c.id}
             className={
-              "conversation-item" +
-              (c.id === activeConversationId ? " conversation-item-active" : "")
+              "conversation-item-row" +
+              (c.id === activeConversationId ? " conversation-item-row-active" : "")
             }
-            onClick={() => onSelectConversation(c.id)}
           >
-            {c.title || "Untitled"}
-          </button>
+            <button
+              className={
+                "conversation-item" +
+                (c.id === activeConversationId ? " conversation-item-active" : "")
+              }
+              onClick={() => onSelectConversation(c.id)}
+            >
+              {c.title || "Untitled"}
+            </button>
+            <button
+              className="conversation-item-delete"
+              onClick={() => setPendingDeleteId(c.id)}
+              aria-label="Delete conversation"
+              title="Delete conversation"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
         ))}
       </div>
 
       {showApiModal && (
         <ApiKeyModal onClose={() => setShowApiModal(false)} />
+      )}
+
+      {pendingDeleteId && (
+        <div className="modal-overlay" onClick={() => setPendingDeleteId(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Delete conversation?</h2>
+            <p className="modal-subtitle">This can't be undone.</p>
+            <div className="modal-actions">
+              <button
+                className="modal-button-secondary"
+                onClick={() => setPendingDeleteId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="modal-button-danger"
+                onClick={handleConfirmDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1054,3 +1054,47 @@ textarea {
   background: rgba(126, 232, 192, 0.35);
   border-radius: 2px;
 }
+.conversation-item-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.conversation-item-row .conversation-item {
+  flex: 1;
+}
+
+.conversation-item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.conversation-item-row:hover .conversation-item-delete {
+  opacity: 1;
+}
+
+.conversation-item-delete:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-danger);
+}
+
+.modal-button-danger {
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--color-danger);
+  color: var(--color-bg);
+}
+
+.modal-button-danger:hover {
+  opacity: 0.9;
+}
