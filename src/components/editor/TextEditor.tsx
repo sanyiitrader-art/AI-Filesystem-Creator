@@ -1,9 +1,15 @@
-// The editable surface. Port of Android's TextEditorView.kt using the
-// standard lightweight web technique for a highlighted plain-text
-// editor: a transparent-text <textarea> layered exactly over a <pre>
-// that renders the same content through syntaxHighlighter.ts, with
-// scroll position synced between the two. No CodeMirror/Monaco --
-// stays a plain text/code editor, not an IDE, per the spec.
+// The editable surface. Adds the line-number gutter feature ported
+// from the Android version: mint-bordered, self-sized number squares
+// per line; a number shows for any line with content OR any line at
+// or before the cursor's current line (so a line you've typed past
+// keeps its number even if you later delete its content back to
+// empty -- and if you backspace-merge that empty line away entirely,
+// it simply stops existing as a row, so its number naturally
+// disappears with it); lines never wrap and extend right
+// indefinitely; one shared horizontal scroll for the whole file,
+// bounded by the longest line; the gutter scrolls vertically with
+// the code but stays pinned horizontally; the caret is kept visible
+// on both axes as you type or navigate.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { highlightSyntax, isHighlightableExtension } from "../../lib/syntaxHighlighter";
@@ -16,6 +22,11 @@ interface TextEditorProps {
   onHighlightConsumed: () => void;
 }
 
+const FONT_SIZE_PX = 13;
+const LINE_HEIGHT_PX = 20;
+const PADDING_PX = 12;
+const FONT_FAMILY = "'JetBrains Mono', 'Cascadia Code', Consolas, monospace";
+
 function absoluteOffset(content: string, lineNumber: number, column: number): number {
   const lines = content.split("\n");
   let offset = 0;
@@ -23,6 +34,18 @@ function absoluteOffset(content: string, lineNumber: number, column: number): nu
     offset += lines[i].length + 1;
   }
   return Math.min(offset + column, content.length);
+}
+
+// Monospace guarantee: every character has the same pixel width.
+// Measured once via canvas (no DOM element needed) -- lets cursor
+// position and scroll targeting be computed directly (column *
+// charWidth) instead of depending on layout measurement per keystroke.
+function measureCharWidth(): number {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return FONT_SIZE_PX * 0.6;
+  ctx.font = `${FONT_SIZE_PX}px ${FONT_FAMILY}`;
+  return ctx.measureText("M").width;
 }
 
 export function TextEditor({
@@ -33,13 +56,63 @@ export function TextEditor({
 }: TextEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+
   const [activeHighlight, setActiveHighlight] = useState<{ start: number; end: number } | null>(null);
+  const [cursorLine, setCursorLine] = useState(0);
+  const charWidth = useMemo(measureCharWidth, []);
 
   const extension = openFile ? (openFile.name.split(".").pop() ?? "") : "";
+  const content = openFile?.content ?? "";
+  const lineTexts = useMemo(() => content.split("\n"), [content]);
+
+  const longestLineChars = useMemo(
+    () => Math.max(1, ...lineTexts.map((l) => l.length)),
+    [lineTexts]
+  );
+  const contentWidthPx = longestLineChars * charWidth + 2 * PADDING_PX + 20;
 
   useEffect(() => {
     setActiveHighlight(null);
+    setCursorLine(0);
   }, [openFile?.path]);
+
+  function syncCursor() {
+    const el = textareaRef.current;
+    if (!el) return;
+    const pos = el.selectionStart;
+    const before = el.value.slice(0, pos);
+    const line = before.split("\n").length - 1;
+    const column = before.slice(before.lastIndexOf("\n") + 1).length;
+    setCursorLine(line);
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const effectiveW = container.clientWidth - 2 * PADDING_PX;
+    const effectiveH = container.clientHeight - 2 * PADDING_PX;
+    const margin = 8;
+
+    const cursorTop = line * LINE_HEIGHT_PX;
+    const cursorBottom = cursorTop + LINE_HEIGHT_PX;
+    const vTop = container.scrollTop;
+    const vBottom = vTop + effectiveH;
+    if (cursorBottom + margin > vBottom) {
+      container.scrollTop = cursorBottom + margin - effectiveH;
+    } else if (cursorTop - margin < vTop) {
+      container.scrollTop = Math.max(0, cursorTop - margin);
+    }
+
+    const cursorX = column * charWidth;
+    const hLeft = container.scrollLeft;
+    const hRight = hLeft + effectiveW;
+    if (cursorX + margin > hRight) {
+      container.scrollLeft = cursorX + margin - effectiveW;
+    } else if (cursorX - margin < hLeft) {
+      container.scrollLeft = Math.max(0, cursorX - margin);
+    }
+  }
 
   useEffect(() => {
     if (!highlightRequest || !openFile) return;
@@ -50,21 +123,15 @@ export function TextEditor({
       onHighlightConsumed();
       return;
     }
-
     setActiveHighlight({ start, end });
 
-    const textarea = textareaRef.current;
-    if (textarea) {
-      const before = openFile.content.slice(0, start);
-      const lineIndex = before.split("\n").length - 1;
-      const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight || "18");
-      const targetTop = Math.max(0, lineIndex * lineHeight - 80);
-      textarea.scrollTop = targetTop;
-      if (highlightRef.current) highlightRef.current.scrollTop = targetTop;
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollTop = Math.max(0, (highlightRequest.lineNumber - 1) * LINE_HEIGHT_PX - 80);
+      container.scrollLeft = Math.max(0, highlightRequest.matchStart * charWidth - 80);
     }
-
     onHighlightConsumed();
-  }, [highlightRequest, openFile, onHighlightConsumed]);
+  }, [highlightRequest, openFile, onHighlightConsumed, charWidth]);
 
   const highlightedNodes = useMemo(() => {
     if (!openFile) return null;
@@ -72,9 +139,7 @@ export function TextEditor({
       ? highlightSyntax(openFile.content, extension)
       : [{ text: openFile.content, className: null as string | null }];
 
-    if (!activeHighlight) {
-      return segments.map((seg, i) => renderSegment(seg, i));
-    }
+    if (!activeHighlight) return segments.map((seg, i) => renderSegment(seg, i));
 
     const nodes: JSX.Element[] = [];
     let pos = 0;
@@ -84,14 +149,11 @@ export function TextEditor({
       const segEnd = pos + seg.text.length;
       const overlapStart = Math.max(segStart, activeHighlight.start);
       const overlapEnd = Math.min(segEnd, activeHighlight.end);
-
       if (overlapStart >= overlapEnd) {
         nodes.push(renderSegment(seg, key++));
       } else {
         if (overlapStart > segStart) {
-          nodes.push(
-            renderSegment({ text: seg.text.slice(0, overlapStart - segStart), className: seg.className }, key++)
-          );
+          nodes.push(renderSegment({ text: seg.text.slice(0, overlapStart - segStart), className: seg.className }, key++));
         }
         nodes.push(
           <span key={key++} className="syntax-search-highlight">
@@ -99,9 +161,7 @@ export function TextEditor({
           </span>
         );
         if (overlapEnd < segEnd) {
-          nodes.push(
-            renderSegment({ text: seg.text.slice(overlapEnd - segStart), className: seg.className }, key++)
-          );
+          nodes.push(renderSegment({ text: seg.text.slice(overlapEnd - segStart), className: seg.className }, key++));
         }
       }
       pos = segEnd;
@@ -109,10 +169,15 @@ export function TextEditor({
     return nodes;
   }, [openFile, extension, activeHighlight]);
 
-  function syncScroll() {
-    if (textareaRef.current && highlightRef.current) {
-      highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-      highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
+  function handleScroll() {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    if (highlightRef.current) {
+      highlightRef.current.scrollTop = container.scrollTop;
+      highlightRef.current.scrollLeft = container.scrollLeft;
+    }
+    if (gutterRef.current) {
+      gutterRef.current.scrollTop = container.scrollTop;
     }
   }
 
@@ -121,23 +186,46 @@ export function TextEditor({
   }
 
   return (
-    <div className="editor-text-container">
-      <pre ref={highlightRef} className="editor-text-highlight-layer" aria-hidden="true">
-        {highlightedNodes}
-        {"\n"}
-      </pre>
-      <textarea
-        ref={textareaRef}
-        className="editor-text-input"
-        value={openFile.content}
-        spellCheck={false}
-        onScroll={syncScroll}
-        onMouseDown={() => setActiveHighlight(null)}
-        onKeyDown={() => {
-          if (activeHighlight) setActiveHighlight(null);
-        }}
-        onChange={(e) => onContentChange(e.target.value)}
-      />
+    <div className="editor-text-outer">
+      <div className="editor-text-gutter" ref={gutterRef}>
+        {lineTexts.map((lineText, index) =>
+          lineText.length > 0 || index <= cursorLine ? (
+            <div key={index} className="editor-text-line-number-row">
+              <span className="editor-text-line-number">{index + 1}</span>
+            </div>
+          ) : (
+            <div key={index} className="editor-text-line-spacer" />
+          )
+        )}
+        <div className="editor-text-line-spacer" />
+      </div>
+
+      <div className="editor-text-scroll" ref={scrollContainerRef} onScroll={handleScroll}>
+        <div className="editor-text-inner" style={{ width: contentWidthPx }}>
+          <pre ref={highlightRef} className="editor-text-highlight-layer" aria-hidden="true">
+            {highlightedNodes}
+            {"\n"}
+          </pre>
+          <textarea
+            ref={textareaRef}
+            className="editor-text-input"
+            value={openFile.content}
+            spellCheck={false}
+            wrap="off"
+            onSelect={syncCursor}
+            onKeyUp={syncCursor}
+            onClick={syncCursor}
+            onMouseDown={() => setActiveHighlight(null)}
+            onKeyDown={() => {
+              if (activeHighlight) setActiveHighlight(null);
+            }}
+            onChange={(e) => {
+              onContentChange(e.target.value);
+              setTimeout(syncCursor, 0);
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }

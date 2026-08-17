@@ -993,30 +993,72 @@ textarea {
   font-size: 13px;
 }
 
-.editor-text-container {
-  position: relative;
+.editor-text-outer {
+  display: flex;
   flex: 1;
   overflow: hidden;
+}
+
+.editor-text-gutter {
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: 12px 4px;
+  background: var(--color-bg);
+}
+
+.editor-text-line-number-row {
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.editor-text-line-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--color-mint);
+  border-radius: 3px;
+  color: var(--color-mint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.editor-text-line-spacer {
+  height: 20px;
+}
+
+.editor-text-scroll {
+  flex: 1;
+  overflow: auto;
+}
+
+.editor-text-inner {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 12px;
+  box-sizing: border-box;
 }
 
 .editor-text-highlight-layer,
 .editor-text-input {
   position: absolute;
-  inset: 0;
+  top: 12px;
+  left: 12px;
+  right: 12px;
   margin: 0;
-  padding: 12px;
+  padding: 0;
   border: none;
   font-family: var(--font-mono);
   font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow: auto;
+  line-height: 20px;
+  white-space: pre;
 }
 
 .editor-text-highlight-layer {
   color: var(--color-text-primary);
-  background: var(--color-bg);
   pointer-events: none;
 }
 
@@ -1025,6 +1067,9 @@ textarea {
   color: transparent;
   caret-color: var(--color-text-primary);
   resize: none;
+  overflow: hidden;
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
 }
 
 .editor-text-input::selection {
