@@ -6,11 +6,35 @@ use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attachment {
+    pub name: String,
+    pub kind: AttachmentKind,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AttachmentKind {
+    Txt,
+    Md,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
     pub role: MessageRole,
     pub content: String,
     pub created_at: String,
+    // Native-chat feature additions. #[serde(default)] means older
+    // saved conversation files (written before this feature existed)
+    // still deserialize fine -- they simply get liked=false,
+    // disliked=false, attachments=[].
+    #[serde(default)]
+    pub liked: bool,
+    #[serde(default)]
+    pub disliked: bool,
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,19 +1,13 @@
-// Message input row: text input, attach (+) button restricted to
-// .txt/.md (spec section 30), and send button (section 31).
-
 import { useRef, useState } from "react";
 import { Plus, Send, X } from "lucide-react";
-import type { Attachment, AttachmentKind } from "../lib/types";
+import type { Attachment } from "../lib/types";
+
+const MAX_ATTACHMENTS = 20;
 
 interface MessageInputProps {
   onSend: (text: string, attachments: Attachment[]) => void;
   disabled: boolean;
 }
-
-const ALLOWED_EXTENSIONS: Record<string, AttachmentKind> = {
-  txt: "txt",
-  md: "md",
-};
 
 export function MessageInput({ onSend, disabled }: MessageInputProps) {
   const [text, setText] = useState("");
@@ -30,10 +24,17 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
     if (!files) return;
     setAttachError(null);
 
+    const room = MAX_ATTACHMENTS - attachments.length;
+    if (room <= 0) {
+      setAttachError("Maximum of 20 attachments per prompt.");
+      e.target.value = "";
+      return;
+    }
+
     const newAttachments: Attachment[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of Array.from(files).slice(0, room)) {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-      const kind = ALLOWED_EXTENSIONS[ext];
+      const kind = ext === "txt" ? "txt" : ext === "md" ? "md" : null;
       if (!kind) {
         setAttachError("Only .txt and .md files are supported.");
         continue;
@@ -43,7 +44,7 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
     }
 
     setAttachments((prev) => [...prev, ...newAttachments]);
-    e.target.value = ""; // allow re-selecting the same file later
+    e.target.value = "";
   }
 
   function removeAttachment(name: string) {
@@ -73,8 +74,8 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
       {attachments.length > 0 && (
         <div className="attachment-chip-row">
           {attachments.map((a) => (
-            <div className="attachment-chip" key={a.name}>
-              <span>{a.name}</span>
+            <div className="attachment-chip" key={a.name} title={a.name}>
+              <span className="attachment-chip-name">{a.name}</span>
               <button
                 className="attachment-chip-remove"
                 onClick={() => removeAttachment(a.name)}
@@ -94,7 +95,7 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
           className="icon-button"
           onClick={handleAttachClick}
           aria-label="Attach file"
-          disabled={disabled}
+          disabled={disabled || attachments.length >= MAX_ATTACHMENTS}
         >
           <Plus size={18} />
         </button>

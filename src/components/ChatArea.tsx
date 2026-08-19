@@ -1,28 +1,37 @@
-// Scrollable message list with a custom scrollbar (spec sections
-// 38-40): dynamic thumb size based on content amount, smooth wheel
-// scrolling, fast draggable thumb, both controlling the same scroll
-// position. Hosts MessageInput at the bottom, kept separate from the
-// scrolling region.
-
 import { useEffect, useRef, useState } from "react";
-import { Message } from "./Message";
+import { MessageBubble } from "./Message";
 import { MessageInput } from "./MessageInput";
-import type { Message as MessageType, Attachment } from "../lib/types";
+import type { Attachment, Message } from "../lib/types";
 
 interface ChatAreaProps {
-  messages: MessageType[];
+  messages: Message[];
   onSend: (text: string, attachments: Attachment[]) => void;
   sending: boolean;
+  latestUserId?: string;
+  latestAiId?: string;
+  onLike: (id: string) => void;
+  onDislike: (id: string) => void;
+  onRetry: (id: string) => void;
+  onSaveEdit: (id: string, newText: string) => void;
 }
 
-export function ChatArea({ messages, onSend, sending }: ChatAreaProps) {
+export function ChatArea({
+  messages,
+  onSend,
+  sending,
+  latestUserId,
+  latestAiId,
+  onLike,
+  onDislike,
+  onRetry,
+  onSaveEdit,
+}: ChatAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const [thumbHeight, setThumbHeight] = useState(0);
   const [thumbTop, setThumbTop] = useState(0);
   const draggingRef = useRef(false);
 
-  // Keep the thumb geometry in sync with content/scroll position.
   function updateThumb() {
     const el = scrollRef.current;
     const track = trackRef.current;
@@ -30,13 +39,13 @@ export function ChatArea({ messages, onSend, sending }: ChatAreaProps) {
 
     const { scrollHeight, clientHeight, scrollTop } = el;
     if (scrollHeight <= clientHeight) {
-      setThumbHeight(0); // nothing to scroll -- hide thumb
+      setThumbHeight(0);
       return;
     }
 
     const trackHeight = track.clientHeight;
     const ratio = clientHeight / scrollHeight;
-    const height = Math.max(ratio * trackHeight, 24); // min thumb size
+    const height = Math.max(ratio * trackHeight, 24);
     const maxTop = trackHeight - height;
     const scrollRatio = scrollTop / (scrollHeight - clientHeight);
 
@@ -60,10 +69,6 @@ export function ChatArea({ messages, onSend, sending }: ChatAreaProps) {
     };
   }, []);
 
-// On a new user message, bring it to the TOP of the visible area.
-  // On a new AI reply, reveal it (scroll to bottom). Only fires once
-  // per new message -- never continuously forces scroll, so manual
-  // scrolling stays free at all other times.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || messages.length === 0) return;
@@ -115,7 +120,16 @@ export function ChatArea({ messages, onSend, sending }: ChatAreaProps) {
       <div className="chat-scroll-wrapper">
         <div className="chat-messages" ref={scrollRef}>
           {messages.map((m) => (
-            <Message key={m.id} message={m} />
+            <MessageBubble
+              key={m.id}
+              message={m}
+              isLatestUserMessage={m.id === latestUserId}
+              isLatestAiMessage={m.id === latestAiId}
+              onLike={() => onLike(m.id)}
+              onDislike={() => onDislike(m.id)}
+              onRetry={() => onRetry(m.id)}
+              onSaveEdit={(newText) => onSaveEdit(m.id, newText)}
+            />
           ))}
         </div>
 

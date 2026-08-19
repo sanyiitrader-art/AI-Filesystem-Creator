@@ -1,141 +1,235 @@
-// Renders a single message. Branches on role (spec sections 32-34):
-// - user: bubble style, width driven by content up to a max-width
-// - assistant: unboxed, on the clean chat surface, with rich
-//   formatting (paragraphs, lists, headings, inline code, code blocks)
-//
-// No external markdown library is used -- the AI's replies are meant
-// to be simple structured text (spec section 34 explicitly says "do
-// not force unnecessary formatting on short responses"), so a small
-// self-contained formatter is enough and keeps the dependency surface
-// minimal (section 44).
+// AI messages: action row (Copy/Like/Dislike/Retry) revealed on
+// hover, not always visible -- Windows equivalent of Android's
+// always-visible row, since hover is the natural desktop signal for
+// "this is interactive" instead of long-press.
+// User messages: hovering reveals small Copy/Edit icon buttons at the
+// bubble's corner (Edit disabled unless latest); clicking Edit turns
+// the bubble itself into an editable field with Discard/Save beneath.
 
-import type { Message as MessageType } from "../lib/types";
+import { useState } from "react";
+import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip, X } from "lucide-react";
+import type { Message as MessageType, Attachment } from "../lib/types";
 
-interface MessageProps {
+interface MessageBubbleProps {
   message: MessageType;
+  isLatestUserMessage?: boolean;
+  isLatestAiMessage?: boolean;
+  onLike?: () => void;
+  onDislike?: () => void;
+  onRetry?: () => void;
+  onSaveEdit?: (newText: string) => void;
 }
 
-export function Message({ message }: MessageProps) {
+export function MessageBubble({
+  message,
+  isLatestUserMessage = false,
+  isLatestAiMessage = false,
+  onLike = () => {},
+  onDislike = () => {},
+  onRetry = () => {},
+  onSaveEdit = () => {},
+}: MessageBubbleProps) {
   if (message.role === "user") {
     return (
-      <div className="message-row message-row-user">
-        <div className="message-bubble">{message.content}</div>
-      </div>
+      <UserMessage
+        message={message}
+        isLatest={isLatestUserMessage}
+        onSaveEdit={onSaveEdit}
+      />
     );
+  }
+  return (
+    <AiMessage
+      message={message}
+      isLatest={isLatestAiMessage}
+      onLike={onLike}
+      onDislike={onDislike}
+      onRetry={onRetry}
+    />
+  );
+}
+
+function UserMessage({
+  message,
+  isLatest,
+  onSaveEdit,
+}: {
+  message: MessageType;
+  isLatest: boolean;
+  onSaveEdit: (newText: string) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(message.content);
+  const [showAttachments, setShowAttachments] = useState(false);
+
+  function startEdit() {
+    setEditText(message.content);
+    setIsEditing(true);
   }
 
   return (
-    <div className="message-row message-row-assistant">
-      <div className="message-assistant">
-        {renderFormatted(message.content)}
+    <div className="message-row message-row-user" style={{ flexDirection: "column", alignItems: "flex-end" }}>
+      {message.attachments.length > 0 && (
+        <div className="attachment-indicator" onClick={() => setShowAttachments(true)}>
+          <Paperclip size={12} />
+          <span>
+            {message.attachments.length} attached file{message.attachments.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      )}
+
+      {isEditing ? (
+        <div className="message-edit-box">
+          <textarea
+            className="message-edit-textarea"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            autoFocus
+          />
+          <div className="message-edit-actions">
+            <button
+              className="message-edit-discard"
+              onClick={() => {
+                setEditText(message.content);
+                setIsEditing(false);
+              }}
+            >
+              Discard
+            </button>
+            <button
+              className="message-edit-save"
+              onClick={() => {
+                setIsEditing(false);
+                onSaveEdit(editText.trim());
+              }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="message-bubble-wrapper"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          {hovered && (
+            <div className="message-hover-actions message-hover-actions-user">
+              <button
+                className="message-hover-btn"
+                title="Copy"
+                onClick={() => navigator.clipboard.writeText(message.content)}
+              >
+                <Copy size={13} />
+              </button>
+              <button
+                className="message-hover-btn"
+                title={isLatest ? "Edit" : "Only the latest prompt can be edited"}
+                disabled={!isLatest}
+                onClick={startEdit}
+              >
+                <Edit2 size={13} />
+              </button>
+            </div>
+          )}
+          <div className="message-bubble">{message.content}</div>
+        </div>
+      )}
+
+      {showAttachments && (
+        <AttachmentListDialog
+          attachments={message.attachments}
+          onClose={() => setShowAttachments(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AiMessage({
+  message,
+  isLatest,
+  onLike,
+  onDislike,
+  onRetry,
+}: {
+  message: MessageType;
+  isLatest: boolean;
+  onLike: () => void;
+  onDislike: () => void;
+  onRetry: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      className="message-row message-row-assistant"
+      style={{ flexDirection: "column" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="message-assistant">{message.content}</div>
+
+      <div className={`message-action-row${hovered ? " message-action-row-visible" : ""}`}>
+        <button
+          className="message-hover-btn"
+          title="Copy"
+          onClick={() => navigator.clipboard.writeText(message.content)}
+        >
+          <Copy size={14} />
+        </button>
+        <button
+          className="message-hover-btn"
+          title="Like"
+          onClick={onLike}
+        >
+          <ThumbsUp size={14} color={message.liked ? "var(--color-mint)" : undefined} />
+        </button>
+        <button
+          className="message-hover-btn"
+          title="Dislike"
+          onClick={onDislike}
+        >
+          <ThumbsDown size={14} color={message.disliked ? "var(--color-mint)" : undefined} />
+        </button>
+        <button
+          className="message-hover-btn"
+          title={isLatest ? "Retry" : "Only the latest response can be retried"}
+          disabled={!isLatest}
+          onClick={onRetry}
+        >
+          <RefreshCw size={14} />
+        </button>
       </div>
     </div>
   );
 }
 
-/**
- * Minimal formatter: splits assistant text into blocks (code fences,
- * headings, list groups, paragraphs) and renders inline code/emphasis
- * within non-code blocks. Deliberately simple -- not a full markdown
- * parser, just enough for section 34's requirements.
- */
-function renderFormatted(text: string) {
-  const lines = text.split("\n");
-  const blocks: JSX.Element[] = [];
-  let i = 0;
-  let key = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Fenced code block
-    if (line.trim().startsWith("```")) {
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      i++; // skip closing fence
-      blocks.push(
-        <pre className="message-code-block" key={key++}>
-          <code>{codeLines.join("\n")}</code>
-        </pre>
-      );
-      continue;
-    }
-
-    // Heading
-    const headingMatch = /^(#{1,3})\s+(.*)$/.exec(line);
-    if (headingMatch) {
-      const level = headingMatch[1].length;
-      const HeadingTag = (`h${Math.min(level + 2, 6)}` as unknown) as "h3";
-      blocks.push(
-        <HeadingTag className="message-heading" key={key++}>
-          {renderInline(headingMatch[2])}
-        </HeadingTag>
-      );
-      i++;
-      continue;
-    }
-
-    // List group (contiguous "- " or "* " lines)
-    if (/^[-*]\s+/.test(line.trim())) {
-      const items: string[] = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
-        i++;
-      }
-      blocks.push(
-        <ul className="message-list" key={key++}>
-          {items.map((item, idx) => (
-            <li key={idx}>{renderInline(item)}</li>
+function AttachmentListDialog({
+  attachments,
+  onClose,
+}: {
+  attachments: Attachment[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-title">Attachments</h2>
+        <div className="attachment-dialog-list">
+          {attachments.map((a, i) => (
+            <div key={i} className="attachment-dialog-item">
+              {a.name}
+            </div>
           ))}
-        </ul>
-      );
-      continue;
-    }
-
-    // Blank line -- skip
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-
-    // Paragraph: consume until blank line, heading, list, or fence
-    const paraLines: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== "" &&
-      !lines[i].trim().startsWith("```") &&
-      !/^[-*]\s+/.test(lines[i].trim()) &&
-      !/^#{1,3}\s+/.test(lines[i])
-    ) {
-      paraLines.push(lines[i]);
-      i++;
-    }
-    blocks.push(
-      <p className="message-paragraph" key={key++}>
-        {paraLines.map((l, idx) => (
-          <span key={idx}>
-            {renderInline(l)}
-            {idx < paraLines.length - 1 && <br />}
-          </span>
-        ))}
-      </p>
-    );
-  }
-
-  return blocks;
-}
-
-/** Renders inline `code` spans within an already-block-level line. */
-function renderInline(line: string): (string | JSX.Element)[] {
-  const parts = line.split(/(`[^`]+`)/g);
-  return parts.map((part, idx) => {
-    if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
-      return <code key={idx} className="message-inline-code">{part.slice(1, -1)}</code>;
-    }
-    return part;
-  });
+        </div>
+        <div className="modal-actions">
+          <button className="modal-button-secondary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

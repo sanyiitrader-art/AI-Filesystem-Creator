@@ -1,19 +1,6 @@
-// Top-level layout and orchestrator (spec section 2's full pipeline).
-// Owns the active conversation's messages, drives the send flow:
-// user message -> aiClient.sendTurn -> optional executeFsRequest ->
-// structured result folded back to the AI as context -> persisted via
-// saveConversation. Wires Sidebar and ChatArea together.
-//
-// Also owns the AI <-> editor view switch. EditorView stays mounted
-// at all times once entered (hidden via CSS, not unmounted) so its
-// internal state -- workspace, open file, nav history, auto save,
-// unsaved edits -- survives switching back to the AI screen.
-
 import { useEffect, useState } from "react";
-import { FileText } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
-import { EditorView } from "./components/editor/EditorView";
 import { sendTurn } from "./lib/aiClient";
 import {
   createConversation,
@@ -21,20 +8,25 @@ import {
   getConversation,
   saveConversation,
 } from "./lib/tauri";
-import type { Attachment, Conversation, Message } from "./lib/types";
+import type { Attachment, Conversation, Message, FsOperationResult, FsRequest } from "./lib/types";
 
-function makeMessage(role: Message["role"], content: string): Message {
+function makeMessage(
+  role: Message["role"],
+  content: string,
+  attachments: Attachment[] = []
+): Message {
   return {
     id: crypto.randomUUID(),
     role,
     content,
     created_at: new Date().toISOString(),
+    liked: false,
+    disliked: false,
+    attachments,
   };
 }
 
-function summarizeResultsForAi(
-  results: Awaited<ReturnType<typeof executeFsRequest>>
-): string {
+function summarizeResultsForAi(results: FsOperationResult[]): string {
   const lines: string[] = [];
   for (const r of results) {
     for (const d of r.created_directories) {
@@ -60,10 +52,7 @@ function deriveTitle(firstUserText: string): string {
   return trimmed.length > 40 ? `${trimmed.slice(0, 40)}...` : trimmed;
 }
 
-type TopLevelView = "ai" | "editor";
-
 export default function App() {
-  const [view, setView] = useState<TopLevelView>("ai");
   const [collapsed, setCollapsed] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [sending, setSending] = useState(false);
@@ -89,24 +78,40 @@ export default function App() {
     setRefreshToken((t) => t + 1);
   }
 
+  // Shared by send/retry/edit-save: runs one AI turn against the
+  // given prior history, executing an fs request if proposed. Returns
+  // the text for the resulting assistant message.
+  async function runTurn(
+    historyBeforeThisTurn: Message[],
+    userText: string,
+    attachments: Attachment[]
+  ): Promise<string> {
+    const turn = await sendTurn(historyBeforeThisTurn, userText, attachments);
+
+    if (!turn.fsRequest) return turn.replyText;
+
+    const results = await executeFsRequest(turn.fsRequest);
+    const summary = summarizeResultsForAi(results);
+
+    const followUpHistory: Message[] = [
+      ...historyBeforeThisTurn,
+      makeMessage("user", userText, attachments),
+      makeMessage("assistant", turn.replyText),
+    ];
+    const followUp = await sendTurn(followUpHistory, summary, []);
+    return followUp.replyText;
+  }
+
   async function handleSend(text: string, attachments: Attachment[]) {
     if (!conversation || sending) return;
 
-    const displayText =
-      attachments.length > 0
-        ? `${text}${text ? "\n" : ""}[Attached: ${attachments
-            .map((a) => a.name)
-            .join(", ")}]`
-        : text;
-
-    const userMessage = makeMessage("user", displayText || text);
-    const isFirstMessage = conversation.messages.length === 0;
-
-    const historyBeforeThisTurn = conversation.messages;
+    const userMessage = makeMessage("user", text, attachments);
+    const historyBefore = conversation.messages;
+    const isFirst = conversation.messages.length === 0;
 
     let working: Conversation = {
       ...conversation,
-      title: isFirstMessage ? deriveTitle(text) : conversation.title,
+      title: isFirst ? deriveTitle(text) : conversation.title,
       messages: [...conversation.messages, userMessage],
       updated_at: new Date().toISOString(),
     };
@@ -114,22 +119,7 @@ export default function App() {
     setSending(true);
 
     try {
-      const turn = await sendTurn(historyBeforeThisTurn, text, attachments);
-      let assistantText = turn.replyText;
-
-      if (turn.fsRequest) {
-        const results = await executeFsRequest(turn.fsRequest);
-        const summary = summarizeResultsForAi(results);
-
-        const followUpHistory: Message[] = [
-          ...historyBeforeThisTurn,
-          userMessage,
-          makeMessage("assistant", turn.replyText),
-        ];
-        const followUp = await sendTurn(followUpHistory, summary, []);
-        assistantText = followUp.replyText;
-      }
-
+      const assistantText = await runTurn(historyBefore, text, attachments);
       const assistantMessage = makeMessage("assistant", assistantText);
       working = {
         ...working,
@@ -139,13 +129,9 @@ export default function App() {
       setConversation(working);
       await persist(working);
     } catch (err) {
-      const errorText =
-        err instanceof Error ? err.message : "Something went wrong.";
+      const errorText = err instanceof Error ? err.message : "Something went wrong.";
       const errorMessage = makeMessage("assistant", errorText);
-      working = {
-        ...working,
-        messages: [...working.messages, errorMessage],
-      };
+      working = { ...working, messages: [...working.messages, errorMessage] };
       setConversation(working);
       await persist(working);
     } finally {
@@ -153,41 +139,128 @@ export default function App() {
     }
   }
 
-  return (
-    <div className="app-root">
-      <div className="app-layout" style={{ display: view === "ai" ? "flex" : "none" }}>
-        <Sidebar
-          collapsed={collapsed}
-          onToggleCollapsed={() => setCollapsed((c) => !c)}
-          activeConversationId={conversation?.id ?? null}
-          onSelectConversation={handleSelectConversation}
-          onNewChat={handleNewChat}
-          refreshToken={refreshToken}
-        />
-        <div className="app-ai-column">
-          <div className="app-ai-topbar">
-            <button
-              className="app-editor-entry-btn"
-              onClick={() => setView("editor")}
-              aria-label="Open editor"
-              title="Open editor"
-            >
-              <FileText size={18} />
-            </button>
-          </div>
-          {conversation && (
-            <ChatArea
-              messages={conversation.messages}
-              onSend={handleSend}
-              sending={sending}
-            />
-          )}
-        </div>
-      </div>
+  // Retry: regenerate the AI half of the LATEST turn in place.
+  async function handleRetry(assistantMessageId: string) {
+    if (!conversation || sending) return;
+    const messages = conversation.messages;
+    const assistantIndex = messages.findLastIndex((m) => m.id === assistantMessageId);
+    if (assistantIndex <= 0) return;
+    const userMsg = messages[assistantIndex - 1];
+    if (userMsg.role !== "user") return;
 
-      <div style={{ display: view === "editor" ? "block" : "none", height: "100%" }}>
-        <EditorView onBackToAi={() => setView("ai")} />
-      </div>
+    const historyBefore = messages.slice(0, assistantIndex - 1);
+    setSending(true);
+
+    try {
+      const assistantText = await runTurn(historyBefore, userMsg.content, userMsg.attachments);
+      const newAssistantMsg = makeMessage("assistant", assistantText);
+      const updated: Conversation = {
+        ...conversation,
+        messages: [...messages.slice(0, assistantIndex), newAssistantMsg],
+        updated_at: new Date().toISOString(),
+      };
+      setConversation(updated);
+      await saveConversation(updated);
+    } catch {
+      // Leave the old response in place on failure.
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // Edit -> Save: replace the LATEST prompt's text, discard
+  // everything after it, regenerate -- one turn, not two.
+  async function handleEditSave(userMessageId: string, newText: string) {
+    if (!conversation || sending || !newText.trim()) return;
+    const messages = conversation.messages;
+    const userIndex = messages.findLastIndex((m) => m.id === userMessageId);
+    if (userIndex < 0) return;
+    const original = messages[userIndex];
+    if (original.role !== "user") return;
+
+    const historyBefore = messages.slice(0, userIndex);
+    const editedUserMsg: Message = { ...original, content: newText };
+
+    let working: Conversation = {
+      ...conversation,
+      messages: [...historyBefore, editedUserMsg],
+      updated_at: new Date().toISOString(),
+    };
+    setConversation(working);
+    setSending(true);
+
+    try {
+      const assistantText = await runTurn(historyBefore, newText, original.attachments);
+      const assistantMessage = makeMessage("assistant", assistantText);
+      working = {
+        ...working,
+        messages: [...working.messages, assistantMessage],
+        updated_at: new Date().toISOString(),
+      };
+      setConversation(working);
+      await persist(working);
+    } catch (err) {
+      const errorText = err instanceof Error ? err.message : "Something went wrong.";
+      const errorMessage = makeMessage("assistant", errorText);
+      working = { ...working, messages: [...working.messages, errorMessage] };
+      setConversation(working);
+      await persist(working);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function handleLike(messageId: string) {
+    if (!conversation) return;
+    const updated: Conversation = {
+      ...conversation,
+      messages: conversation.messages.map((m) =>
+        m.id === messageId ? { ...m, liked: !m.liked, disliked: false } : m
+      ),
+    };
+    setConversation(updated);
+    saveConversation(updated);
+  }
+
+  function handleDislike(messageId: string) {
+    if (!conversation) return;
+    const updated: Conversation = {
+      ...conversation,
+      messages: conversation.messages.map((m) =>
+        m.id === messageId ? { ...m, disliked: !m.disliked, liked: false } : m
+      ),
+    };
+    setConversation(updated);
+    saveConversation(updated);
+  }
+
+  const messages = conversation?.messages ?? [];
+  const latestUserId = [...messages].reverse().find((m) => m.role === "user")?.id;
+  const latestAiId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+
+  return (
+    <div className="app-layout">
+      <Sidebar
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((c) => !c)}
+        activeConversationId={conversation?.id ?? null}
+        onSelectConversation={handleSelectConversation}
+        onNewChat={handleNewChat}
+        refreshToken={refreshToken}
+      />
+      {conversation && (
+        <ChatArea
+          messages={messages}
+          onSend={handleSend}
+          sending={sending}
+          latestUserId={latestUserId}
+          latestAiId={latestAiId}
+          onLike={handleLike}
+          onDislike={handleDislike}
+          onRetry={handleRetry}
+          onSaveEdit={handleEditSave}
+        />
+      )}
     </div>
   );
 }
