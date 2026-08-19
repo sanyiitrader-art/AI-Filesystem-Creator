@@ -1,13 +1,5 @@
-// AI messages: action row (Copy/Like/Dislike/Retry) revealed on
-// hover, not always visible -- Windows equivalent of Android's
-// always-visible row, since hover is the natural desktop signal for
-// "this is interactive" instead of long-press.
-// User messages: hovering reveals small Copy/Edit icon buttons at the
-// bubble's corner (Edit disabled unless latest); clicking Edit turns
-// the bubble itself into an editable field with Discard/Save beneath.
-
 import { useState } from "react";
-import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip, X } from "lucide-react";
+import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip } from "lucide-react";
 import type { Message as MessageType, Attachment } from "../lib/types";
 
 interface MessageBubbleProps {

@@ -8,7 +8,7 @@ import {
   getConversation,
   saveConversation,
 } from "./lib/tauri";
-import type { Attachment, Conversation, Message, FsOperationResult, FsRequest } from "./lib/types";
+import type { Attachment, Conversation, Message, FsOperationResult } from "./lib/types";
 
 function makeMessage(
   role: Message["role"],
@@ -52,6 +52,16 @@ function deriveTitle(firstUserText: string): string {
   return trimmed.length > 40 ? `${trimmed.slice(0, 40)}...` : trimmed;
 }
 
+// Manual replacement for Array.prototype.findLastIndex, which needs
+// an es2023+ lib target this project's tsconfig doesn't set -- avoids
+// touching build config just for this one call.
+function findLastIndex<T>(arr: T[], predicate: (item: T) => boolean): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (predicate(arr[i])) return i;
+  }
+  return -1;
+}
+
 export default function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -78,9 +88,6 @@ export default function App() {
     setRefreshToken((t) => t + 1);
   }
 
-  // Shared by send/retry/edit-save: runs one AI turn against the
-  // given prior history, executing an fs request if proposed. Returns
-  // the text for the resulting assistant message.
   async function runTurn(
     historyBeforeThisTurn: Message[],
     userText: string,
@@ -139,11 +146,10 @@ export default function App() {
     }
   }
 
-  // Retry: regenerate the AI half of the LATEST turn in place.
   async function handleRetry(assistantMessageId: string) {
     if (!conversation || sending) return;
     const messages = conversation.messages;
-    const assistantIndex = messages.findLastIndex((m) => m.id === assistantMessageId);
+    const assistantIndex = findLastIndex(messages, (m) => m.id === assistantMessageId);
     if (assistantIndex <= 0) return;
     const userMsg = messages[assistantIndex - 1];
     if (userMsg.role !== "user") return;
@@ -168,12 +174,10 @@ export default function App() {
     }
   }
 
-  // Edit -> Save: replace the LATEST prompt's text, discard
-  // everything after it, regenerate -- one turn, not two.
   async function handleEditSave(userMessageId: string, newText: string) {
     if (!conversation || sending || !newText.trim()) return;
     const messages = conversation.messages;
-    const userIndex = messages.findLastIndex((m) => m.id === userMessageId);
+    const userIndex = findLastIndex(messages, (m) => m.id === userMessageId);
     if (userIndex < 0) return;
     const original = messages[userIndex];
     if (original.role !== "user") return;
