@@ -1334,3 +1334,35 @@ textarea {
   line-height: 1.5;
   color: var(--color-text-primary);
 }
+.message-row-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+  gap: 4px;
+}
+
+.message-row-assistant {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.message-bubble-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 70%;
+}
+
+.message-bubble {
+  width: fit-content;
+  max-width: 100%;
+  background: var(--color-mint-soft);
+  color: var(--color-text-primary);
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}

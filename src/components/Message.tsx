@@ -60,8 +60,13 @@ function UserMessage({
     setIsEditing(true);
   }
 
+  // Layout is driven entirely by the .message-row-user CSS class now
+  // (no inline style override) -- that's the actual bubble-splitting
+  // fix: the width constraint moved to .message-bubble-wrapper, which
+  // sits directly inside a full-width, definite-width parent, instead
+  // of being a percentage of another auto-sized flex item.
   return (
-    <div className="message-row message-row-user" style={{ flexDirection: "column", alignItems: "flex-end" }}>
+    <div className="message-row message-row-user">
       {message.attachments.length > 0 && (
         <div className="attachment-indicator" onClick={() => setShowAttachments(true)}>
           <Paperclip size={12} />
@@ -157,7 +162,6 @@ function AiMessage({
   return (
     <div
       className="message-row message-row-assistant"
-      style={{ flexDirection: "column" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -223,10 +227,6 @@ function downloadCodeSnippet(language: string, code: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Minimal markdown-style renderer, same rule set as the Android
- *  version: fenced code blocks get a header (language top-left,
- *  Copy/Download top-right) plus a monospace body; headings, lists,
- *  and paragraphs render distinctly. */
 function FormattedContent({ text }: { text: string }) {
   const lines = text.split("\n");
   const blocks: JSX.Element[] = [];
