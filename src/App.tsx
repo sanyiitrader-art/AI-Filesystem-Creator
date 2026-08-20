@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { FileText } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ChatArea } from "./components/ChatArea";
+import { EditorView } from "./components/editor/EditorView";
 import { sendTurn } from "./lib/aiClient";
 import {
   createConversation,
@@ -52,9 +54,6 @@ function deriveTitle(firstUserText: string): string {
   return trimmed.length > 40 ? `${trimmed.slice(0, 40)}...` : trimmed;
 }
 
-// Manual replacement for Array.prototype.findLastIndex, which needs
-// an es2023+ lib target this project's tsconfig doesn't set -- avoids
-// touching build config just for this one call.
 function findLastIndex<T>(arr: T[], predicate: (item: T) => boolean): number {
   for (let i = arr.length - 1; i >= 0; i--) {
     if (predicate(arr[i])) return i;
@@ -62,7 +61,10 @@ function findLastIndex<T>(arr: T[], predicate: (item: T) => boolean): number {
   return -1;
 }
 
+type TopLevelView = "ai" | "editor";
+
 export default function App() {
+  const [view, setView] = useState<TopLevelView>("ai");
   const [collapsed, setCollapsed] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [sending, setSending] = useState(false);
@@ -243,28 +245,46 @@ export default function App() {
   const latestAiId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   return (
-    <div className="app-layout">
-      <Sidebar
-        collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((c) => !c)}
-        activeConversationId={conversation?.id ?? null}
-        onSelectConversation={handleSelectConversation}
-        onNewChat={handleNewChat}
-        refreshToken={refreshToken}
-      />
-      {conversation && (
-        <ChatArea
-          messages={messages}
-          onSend={handleSend}
-          sending={sending}
-          latestUserId={latestUserId}
-          latestAiId={latestAiId}
-          onLike={handleLike}
-          onDislike={handleDislike}
-          onRetry={handleRetry}
-          onSaveEdit={handleEditSave}
+    <div className="app-root">
+      <div className="app-layout" style={{ display: view === "ai" ? "flex" : "none" }}>
+        <Sidebar
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((c) => !c)}
+          activeConversationId={conversation?.id ?? null}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={handleNewChat}
+          refreshToken={refreshToken}
         />
-      )}
+        <div className="app-ai-column">
+          <div className="app-ai-topbar">
+            <button
+              className="app-editor-entry-btn"
+              onClick={() => setView("editor")}
+              aria-label="Open editor"
+              title="Open editor"
+            >
+              <FileText size={18} />
+            </button>
+          </div>
+          {conversation && (
+            <ChatArea
+              messages={messages}
+              onSend={handleSend}
+              sending={sending}
+              latestUserId={latestUserId}
+              latestAiId={latestAiId}
+              onLike={handleLike}
+              onDislike={handleDislike}
+              onRetry={handleRetry}
+              onSaveEdit={handleEditSave}
+            />
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: view === "editor" ? "block" : "none", height: "100%" }}>
+        <EditorView onBackToAi={() => setView("ai")} />
+      </div>
     </div>
   );
 }

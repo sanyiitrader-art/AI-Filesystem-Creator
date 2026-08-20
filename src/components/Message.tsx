@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip } from "lucide-react";
+import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip, Download } from "lucide-react";
 import type { Message as MessageType, Attachment } from "../lib/types";
 
 interface MessageBubbleProps {
@@ -161,7 +161,7 @@ function AiMessage({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="message-assistant">{message.content}</div>
+      <FormattedContent text={message.content} />
 
       <div className={`message-action-row${hovered ? " message-action-row-visible" : ""}`}>
         <button
@@ -196,6 +196,144 @@ function AiMessage({
       </div>
     </div>
   );
+}
+
+function extensionForLanguage(language: string): string {
+  const key = language.trim().toLowerCase();
+  const map: Record<string, string> = {
+    python: "py", py: "py", kotlin: "kt", kt: "kt",
+    javascript: "js", js: "js", typescript: "ts", ts: "ts",
+    java: "java", c: "c", cpp: "cpp", "c++": "cpp",
+    csharp: "cs", "c#": "cs", cs: "cs", html: "html", css: "css",
+    json: "json", bash: "sh", sh: "sh", shell: "sh", sql: "sql",
+    ruby: "rb", rb: "rb", php: "php", go: "go", rust: "rs", rs: "rs",
+    swift: "swift", xml: "xml", yaml: "yml", yml: "yml",
+  };
+  return map[key] ?? "txt";
+}
+
+function downloadCodeSnippet(language: string, code: string) {
+  const ext = extensionForLanguage(language);
+  const blob = new Blob([code], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `snippet_${Date.now()}.${ext}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Minimal markdown-style renderer, same rule set as the Android
+ *  version: fenced code blocks get a header (language top-left,
+ *  Copy/Download top-right) plus a monospace body; headings, lists,
+ *  and paragraphs render distinctly. */
+function FormattedContent({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const blocks: JSX.Element[] = [];
+  let i = 0;
+  let key = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.trim().startsWith("```")) {
+      const language = line.trim().replace(/^```/, "").trim() || "text";
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) i++;
+      const codeText = codeLines.join("\n");
+
+      blocks.push(
+        <div className="message-code-block" key={key++}>
+          <div className="message-code-header">
+            <span className="message-code-lang">{language}</span>
+            <div className="message-code-actions">
+              <button
+                className="message-code-btn"
+                title="Copy code"
+                onClick={() => navigator.clipboard.writeText(codeText)}
+              >
+                <Copy size={13} />
+              </button>
+              <button
+                className="message-code-btn"
+                title="Download code"
+                onClick={() => downloadCodeSnippet(language, codeText)}
+              >
+                <Download size={13} />
+              </button>
+            </div>
+          </div>
+          <pre className="message-code-body">
+            <code>{codeText}</code>
+          </pre>
+        </div>
+      );
+      continue;
+    }
+
+    const headingMatch = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const HeadingTag = (`h${Math.min(level + 2, 6)}` as unknown) as "h3";
+      blocks.push(
+        <HeadingTag className="message-heading" key={key++}>
+          {headingMatch[2]}
+        </HeadingTag>
+      );
+      i++;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line.trim())) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        <ul className="message-list" key={key++}>
+          {items.map((item, idx) => (
+            <li key={idx}>{item}</li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    if (line.trim() === "") {
+      i++;
+      continue;
+    }
+
+    const paraLines: string[] = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      !lines[i].trim().startsWith("```") &&
+      !/^[-*]\s+/.test(lines[i].trim()) &&
+      !/^#{1,3}\s+/.test(lines[i])
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    blocks.push(
+      <p className="message-paragraph" key={key++}>
+        {paraLines.map((l, idx) => (
+          <span key={idx}>
+            {l}
+            {idx < paraLines.length - 1 && <br />}
+          </span>
+        ))}
+      </p>
+    );
+  }
+
+  return <div className="message-assistant">{blocks}</div>;
 }
 
 function AttachmentListDialog({
