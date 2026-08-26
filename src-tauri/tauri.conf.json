@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com"
+      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com; img-src 'self' data:;"
     }
   },
   "bundle": {
