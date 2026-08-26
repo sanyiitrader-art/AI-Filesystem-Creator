@@ -107,6 +107,7 @@ export default function App() {
       makeMessage("user", userText, attachments),
       makeMessage("assistant", turn.replyText),
     ];
+
     const followUp = await sendTurn(followUpHistory, summary, []);
     return followUp.replyText;
   }
@@ -124,23 +125,33 @@ export default function App() {
       messages: [...conversation.messages, userMessage],
       updated_at: new Date().toISOString(),
     };
+
     setConversation(working);
     setSending(true);
 
     try {
       const assistantText = await runTurn(historyBefore, text, attachments);
       const assistantMessage = makeMessage("assistant", assistantText);
+
       working = {
         ...working,
         messages: [...working.messages, assistantMessage],
         updated_at: new Date().toISOString(),
       };
+
       setConversation(working);
       await persist(working);
     } catch (err) {
-      const errorText = err instanceof Error ? err.message : "Something went wrong.";
+      const errorText =
+        err instanceof Error ? err.message : "Something went wrong.";
+
       const errorMessage = makeMessage("assistant", errorText);
-      working = { ...working, messages: [...working.messages, errorMessage] };
+
+      working = {
+        ...working,
+        messages: [...working.messages, errorMessage],
+      };
+
       setConversation(working);
       await persist(working);
     } finally {
@@ -148,29 +159,65 @@ export default function App() {
     }
   }
 
+  // Retry:
+  // Remove the old response immediately so the existing loading animation
+  // can appear while the new response is being generated.
   async function handleRetry(assistantMessageId: string) {
     if (!conversation || sending) return;
+
     const messages = conversation.messages;
-    const assistantIndex = findLastIndex(messages, (m) => m.id === assistantMessageId);
+
+    const assistantIndex = findLastIndex(
+      messages,
+      (m) => m.id === assistantMessageId
+    );
+
     if (assistantIndex <= 0) return;
+
     const userMsg = messages[assistantIndex - 1];
+
     if (userMsg.role !== "user") return;
 
     const historyBefore = messages.slice(0, assistantIndex - 1);
+
+    const stripped: Conversation = {
+      ...conversation,
+      messages: messages.slice(0, assistantIndex),
+    };
+
+    setConversation(stripped);
     setSending(true);
 
     try {
-      const assistantText = await runTurn(historyBefore, userMsg.content, userMsg.attachments);
+      const assistantText = await runTurn(
+        historyBefore,
+        userMsg.content,
+        userMsg.attachments
+      );
+
       const newAssistantMsg = makeMessage("assistant", assistantText);
+
       const updated: Conversation = {
-        ...conversation,
-        messages: [...messages.slice(0, assistantIndex), newAssistantMsg],
+        ...stripped,
+        messages: [...stripped.messages, newAssistantMsg],
         updated_at: new Date().toISOString(),
       };
+
       setConversation(updated);
       await saveConversation(updated);
-    } catch {
-      // Leave the old response in place on failure.
+    } catch (err) {
+      const errorText =
+        err instanceof Error ? err.message : "Something went wrong.";
+
+      const errorMessage = makeMessage("assistant", errorText);
+
+      const updated: Conversation = {
+        ...stripped,
+        messages: [...stripped.messages, errorMessage],
+      };
+
+      setConversation(updated);
+      await saveConversation(updated);
     } finally {
       setSending(false);
     }
@@ -178,37 +225,64 @@ export default function App() {
 
   async function handleEditSave(userMessageId: string, newText: string) {
     if (!conversation || sending || !newText.trim()) return;
+
     const messages = conversation.messages;
-    const userIndex = findLastIndex(messages, (m) => m.id === userMessageId);
+
+    const userIndex = findLastIndex(
+      messages,
+      (m) => m.id === userMessageId
+    );
+
     if (userIndex < 0) return;
+
     const original = messages[userIndex];
+
     if (original.role !== "user") return;
 
     const historyBefore = messages.slice(0, userIndex);
-    const editedUserMsg: Message = { ...original, content: newText };
+
+    const editedUserMsg: Message = {
+      ...original,
+      content: newText,
+    };
 
     let working: Conversation = {
       ...conversation,
       messages: [...historyBefore, editedUserMsg],
       updated_at: new Date().toISOString(),
     };
+
     setConversation(working);
     setSending(true);
 
     try {
-      const assistantText = await runTurn(historyBefore, newText, original.attachments);
+      const assistantText = await runTurn(
+        historyBefore,
+        newText,
+        original.attachments
+      );
+
       const assistantMessage = makeMessage("assistant", assistantText);
+
       working = {
         ...working,
         messages: [...working.messages, assistantMessage],
         updated_at: new Date().toISOString(),
       };
+
       setConversation(working);
       await persist(working);
     } catch (err) {
-      const errorText = err instanceof Error ? err.message : "Something went wrong.";
+      const errorText =
+        err instanceof Error ? err.message : "Something went wrong.";
+
       const errorMessage = makeMessage("assistant", errorText);
-      working = { ...working, messages: [...working.messages, errorMessage] };
+
+      working = {
+        ...working,
+        messages: [...working.messages, errorMessage],
+      };
+
       setConversation(working);
       await persist(working);
     } finally {
@@ -218,35 +292,52 @@ export default function App() {
 
   function handleLike(messageId: string) {
     if (!conversation) return;
+
     const updated: Conversation = {
       ...conversation,
       messages: conversation.messages.map((m) =>
-        m.id === messageId ? { ...m, liked: !m.liked, disliked: false } : m
+        m.id === messageId
+          ? { ...m, liked: !m.liked, disliked: false }
+          : m
       ),
     };
+
     setConversation(updated);
     saveConversation(updated);
   }
 
   function handleDislike(messageId: string) {
     if (!conversation) return;
+
     const updated: Conversation = {
       ...conversation,
       messages: conversation.messages.map((m) =>
-        m.id === messageId ? { ...m, disliked: !m.disliked, liked: false } : m
+        m.id === messageId
+          ? { ...m, disliked: !m.disliked, liked: false }
+          : m
       ),
     };
+
     setConversation(updated);
     saveConversation(updated);
   }
 
   const messages = conversation?.messages ?? [];
-  const latestUserId = [...messages].reverse().find((m) => m.role === "user")?.id;
-  const latestAiId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+
+  const latestUserId = [...messages]
+    .reverse()
+    .find((m) => m.role === "user")?.id;
+
+  const latestAiId = [...messages]
+    .reverse()
+    .find((m) => m.role === "assistant")?.id;
 
   return (
     <div className="app-root">
-      <div className="app-layout" style={{ display: view === "ai" ? "flex" : "none" }}>
+      <div
+        className="app-layout"
+        style={{ display: view === "ai" ? "flex" : "none" }}
+      >
         <Sidebar
           collapsed={collapsed}
           onToggleCollapsed={() => setCollapsed((c) => !c)}
@@ -255,6 +346,7 @@ export default function App() {
           onNewChat={handleNewChat}
           refreshToken={refreshToken}
         />
+
         <div className="app-ai-column">
           <div className="app-ai-topbar">
             <button
@@ -266,6 +358,7 @@ export default function App() {
               <FileText size={18} />
             </button>
           </div>
+
           {conversation && (
             <ChatArea
               messages={messages}
@@ -282,7 +375,12 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ display: view === "editor" ? "block" : "none", height: "100%" }}>
+      <div
+        style={{
+          display: view === "editor" ? "block" : "none",
+          height: "100%",
+        }}
+      >
         <EditorView onBackToAi={() => setView("ai")} />
       </div>
     </div>
