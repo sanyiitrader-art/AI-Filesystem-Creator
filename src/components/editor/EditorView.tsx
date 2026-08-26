@@ -1,22 +1,3 @@
-// Top-level orchestrator for the Windows editor -- direct equivalent
-// of Android's EditorScreen.kt. Owns workspace/tree/open-file/nav-
-// history/auto-save state and all create/rename/delete/search logic.
-//
-// Windows differences from Android, per the integration spec:
-// - No swipe gestures; navigation back to AI is an explicit button
-//   (rendered by EditorRail).
-// - Explorer is a toggleable persistent side panel that stays open
-//   until its own toolbar button is clicked again -- selecting a
-//   file must NOT close it (unlike Android's temporary overlay).
-// - Real-time refresh: while the panel is open, the tree is polled
-//   periodically so files/folders created by another app show up
-//   without needing to close and reopen the panel. This is a
-//   lightweight interval, not a full filesystem watcher, keeping the
-//   editor's "stay lightweight" constraint intact.
-// - This component stays mounted (hidden via CSS) rather than
-//   unmounted when switching to the AI view -- App.tsx controls
-//   visibility, not mount/unmount.
-
 import { useCallback, useEffect, useState } from "react";
 import * as editorFs from "../../lib/editorFs";
 import type {
@@ -34,6 +15,7 @@ import {
   emptyNavigationHistory,
   goBack,
   goForward,
+  isImageExtension,
   navigateTo,
 } from "../../lib/editorTypes";
 import { EditorRail } from "./EditorRail";
@@ -41,9 +23,15 @@ import { EditorTopBar } from "./EditorTopBar";
 import { ExplorerPanel } from "./ExplorerPanel";
 import { EditorMenu } from "./EditorMenu";
 import { TextEditor } from "./TextEditor";
+import { ImageViewer } from "./ImageViewer";
 
 interface EditorViewProps {
   onBackToAi: () => void;
+}
+
+interface OpenImage {
+  path: string;
+  name: string;
 }
 
 function findNode(node: EditorNode | null, path: string): EditorNode | null {
@@ -81,6 +69,7 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
   const [workspaceRoot, setWorkspaceRootState] = useState<string | null>(null);
   const [tree, setTree] = useState<EditorNode | null>(null);
   const [openFile, setOpenFile] = useState<OpenFile | null>(null);
+  const [openImage, setOpenImage] = useState<OpenImage | null>(null);
   const [navHistory, setNavHistory] = useState<NavigationHistory>(emptyNavigationHistory);
   const [autoSave, setAutoSave] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -120,9 +109,6 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
     [workspaceRoot]
   );
 
-  // Desktop equivalent of Android's onResume tree refresh: catches
-  // files created/changed by another app while this window didn't
-  // have focus.
   useEffect(() => {
     function onFocus() {
       refreshTree();
@@ -131,11 +117,6 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
     return () => window.removeEventListener("focus", onFocus);
   }, [refreshTree]);
 
-  // Real-time update: while the Explorer panel is open, poll the tree
-  // periodically so external changes (another app creating/deleting
-  // files in the same folder) show up without the user needing to
-  // close and reopen the panel. Stops entirely when the panel is
-  // closed, so this never runs in the background needlessly.
   useEffect(() => {
     if (!explorerOpen || !workspaceRoot) return;
     const interval = setInterval(() => {
@@ -148,6 +129,7 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
     setWorkspaceRootState(path);
     setSelectedPath(null);
     setOpenFile(null);
+    setOpenImage(null);
     setUnsupportedMessage(null);
     setNavHistory(emptyNavigationHistory);
     setUnsavedEdits({});
@@ -158,13 +140,20 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
   async function openFileAt(path: string, addToHistory = true) {
     const name = findNode(tree, path)?.name ?? path.split(/[\\/]/).pop() ?? path;
 
+    if (isImageExtension(name)) {
+      setOpenFile(null);
+      setUnsupportedMessage(null);
+      setOpenImage({ path, name });
+      setSelectedPath(path);
+      if (addToHistory) setNavHistory((h) => navigateTo(h, path));
+      return;
+    }
+    setOpenImage(null);
+
     if (!(path in unsavedEdits) && (await editorFs.isLikelyBinary(path).catch(() => true))) {
       setUnsupportedMessage(`"${name}" doesn't look like a text file and can't be opened here.`);
       setOpenFile(null);
       setSelectedPath(path);
-      // Explorer intentionally stays open here -- Windows panel only
-      // closes via its own toolbar toggle, never as a side effect of
-      // selecting something.
       return;
     }
 
@@ -172,10 +161,6 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
     setUnsupportedMessage(null);
     setOpenFile({ path, name, content, isDirty: path in unsavedEdits });
     setSelectedPath(path);
-    // Explorer stays open -- fixed bug: this used to call
-    // setExplorerOpen(false) here, which was leftover Android overlay
-    // behavior that never belonged in the Windows toggleable-panel
-    // spec. The panel now only closes when its own button is clicked.
     if (addToHistory) setNavHistory((h) => navigateTo(h, path));
   }
 
@@ -246,6 +231,7 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
           t ? updateNode(t, oldPath, (n) => ({ ...n, path: newPath, name: trimmed })) : t
         );
         setOpenFile((f) => (f && f.path === oldPath ? { ...f, path: newPath, name: trimmed } : f));
+        setOpenImage((img) => (img && img.path === oldPath ? { path: newPath, name: trimmed } : img));
         setSelectedPath((p) => (p === oldPath ? newPath : p));
         refreshTree();
       } else if (result.kind === "DuplicateName") {
@@ -278,6 +264,9 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
     if (openFile && isUnderOrEqual(openFile.path, node)) {
       setOpenFile(null);
       setUnsupportedMessage(null);
+    }
+    if (openImage && isUnderOrEqual(openImage.path, node)) {
+      setOpenImage(null);
     }
     setUnsavedEdits((edits) =>
       Object.fromEntries(Object.entries(edits).filter(([path]) => !isUnderOrEqual(path, node)))
@@ -392,7 +381,7 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
           }}
           tree={tree}
           openFileContent={openFile?.content ?? null}
-          currentFileName={openFile?.name ?? null}
+          currentFileName={openFile?.name ?? openImage?.name ?? null}
           searchMode={searchMode}
           onSearchModeChange={setSearchMode}
           onSelectFileResult={(r: FileSearchResult) => openFileAt(r.path)}
@@ -404,6 +393,8 @@ export function EditorView({ onBackToAi }: EditorViewProps) {
             onOpenFile={handleOpenFileDialog}
             onOpenFolder={handleOpenFolderDialog}
           />
+        ) : openImage ? (
+          <ImageViewer path={openImage.path} name={openImage.name} />
         ) : unsupportedMessage !== null ? (
           <div className="editor-unsupported">{unsupportedMessage}</div>
         ) : (

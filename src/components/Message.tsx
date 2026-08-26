@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip, Download } from "lucide-react";
+import { highlightSyntax, isHighlightableExtension } from "../lib/syntaxHighlighter";
 import type { Message as MessageType, Attachment } from "../lib/types";
 
 interface MessageBubbleProps {
@@ -60,11 +61,6 @@ function UserMessage({
     setIsEditing(true);
   }
 
-  // Layout is driven entirely by the .message-row-user CSS class now
-  // (no inline style override) -- that's the actual bubble-splitting
-  // fix: the width constraint moved to .message-bubble-wrapper, which
-  // sits directly inside a full-width, definite-width parent, instead
-  // of being a percentage of another auto-sized flex item.
   return (
     <div className="message-row message-row-user">
       {message.attachments.length > 0 && (
@@ -245,7 +241,14 @@ function FormattedContent({ text }: { text: string }) {
         i++;
       }
       if (i < lines.length) i++;
+      // codeText is the exact original string, untouched -- used
+      // as-is for Copy/Download. Only the rendered <code> below uses
+      // separately colored spans derived from it.
       const codeText = codeLines.join("\n");
+      const ext = extensionForLanguage(language);
+      const segments = isHighlightableExtension(ext)
+        ? highlightSyntax(codeText, ext)
+        : [{ text: codeText, className: null as string | null }];
 
       blocks.push(
         <div className="message-code-block" key={key++}>
@@ -269,7 +272,15 @@ function FormattedContent({ text }: { text: string }) {
             </div>
           </div>
           <pre className="message-code-body">
-            <code>{codeText}</code>
+            <code>
+              {segments.map((seg, idx) =>
+                seg.className ? (
+                  <span key={idx} className={seg.className}>{seg.text}</span>
+                ) : (
+                  <span key={idx}>{seg.text}</span>
+                )
+              )}
+            </code>
           </pre>
         </div>
       );

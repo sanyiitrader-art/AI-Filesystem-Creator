@@ -1,23 +1,10 @@
-// Shared editor data schema. Direct TypeScript port of the Android
-// EditorModels.kt, adapted for plain filesystem paths instead of SAF
-// content URIs (Windows has direct filesystem access -- no document
-// tree layer needed).
-
 export interface EditorNode {
   path: string;
   name: string;
   isDirectory: boolean;
   parentPath: string | null;
-  // Computed once in Rust's build_node() and sent with every tree
-  // load -- root is 0, each nesting level adds 1. Used directly by
-  // ExplorerPanel.tsx for row indentation, so it never has to
-  // re-derive depth by walking the tree itself.
   depth: number;
   children: EditorNode[];
-  // isExpanded is UI state, not part of the backend's tree shape --
-  // kept client-side only, same separation as the Android version
-  // (Rust's EditorNode has no isExpanded field; the frontend applies
-  // it when merging a fresh tree load with prior expansion state).
   isExpanded: boolean;
 }
 
@@ -92,4 +79,30 @@ export interface InlineEditState {
   existingName?: string;
   initialText: string;
   error: CreationErrorState;
+}
+
+export const IMAGE_EXTENSIONS = new Set([
+  "jpg", "jpeg", "jpe", "jif", "jfif", "jfi", "png", "gif", "webp", "avif", "tiff", "tif",
+  "bmp", "dib", "heif", "heic", "ico", "svg", "svgz", "ai", "eps", "pdf", "jp2", "j2k", "jpf",
+  "jpx", "jpm", "mj2", "jxl", "bpg", "dng", "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf",
+  "sr2", "raf", "orf", "rw2", "pef", "psd", "pdn", "xcf", "ind", "indd", "indt", "pbm", "pgm",
+  "ppm", "ras", "rgb", "tga",
+]);
+
+export function isImageExtension(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_EXTENSIONS.has(ext);
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", jpe: "image/jpeg", jfif: "image/jpeg", jfi: "image/jpeg", jif: "image/jpeg",
+  png: "image/png", gif: "image/gif", webp: "image/webp", avif: "image/avif",
+  bmp: "image/bmp", dib: "image/bmp", ico: "image/x-icon",
+  svg: "image/svg+xml", svgz: "image/svg+xml",
+  tiff: "image/tiff", tif: "image/tiff",
+};
+
+export function mimeForExtension(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return MIME_BY_EXT[ext] ?? "application/octet-stream";
 }

@@ -23,6 +23,7 @@ fn main() {
             editor_fs::editor_load_tree,
             editor_fs::editor_is_likely_binary,
             editor_fs::editor_read_file,
+            editor_fs::editor_read_file_base64,
             editor_fs::editor_write_file,
             editor_fs::editor_create_file,
             editor_fs::editor_create_folder,

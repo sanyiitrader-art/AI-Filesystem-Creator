@@ -244,3 +244,35 @@ pub async fn editor_pick_file(app: AppHandle) -> Result<Option<String>, String> 
     });
     rx.await.map_err(|e| e.to_string())
 }
+// Appended to the existing editor_fs.rs -- add these two items
+// alongside the existing commands (loadTree, readFile, etc.), no
+// other changes to the file needed.
+
+const BASE64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Minimal std-only base64 encoder -- avoids adding a new crate
+/// dependency just for this one feature.
+fn base64_encode(data: &[u8]) -> String {
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+        result.push(BASE64_CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(BASE64_CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        result.push(if chunk.len() > 1 { BASE64_CHARS[((triple >> 6) & 0x3F) as usize] as char } else { '=' });
+        result.push(if chunk.len() > 2 { BASE64_CHARS[(triple & 0x3F) as usize] as char } else { '=' });
+    }
+    result
+}
+
+/// Reads a file's raw bytes and returns them base64-encoded, for the
+/// editor's image viewer -- editor_read_file (text) can't safely
+/// carry arbitrary binary image bytes, so this is a separate command
+/// rather than overloading that one.
+#[tauri::command]
+pub fn editor_read_file_base64(path: String) -> Result<String, String> {
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    Ok(base64_encode(&bytes))
+}

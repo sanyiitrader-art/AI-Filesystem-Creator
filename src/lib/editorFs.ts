@@ -1,8 +1,3 @@
-// Thin wrapper around Tauri's invoke() for every editor_fs command
-// registered in src-tauri/src/editor_fs.rs. Mirrors the existing
-// lib/tauri.ts pattern already used for the AI side -- nothing in
-// this file contains editor logic, that lives in EditorView.tsx.
-
 import { invoke } from "@tauri-apps/api/core";
 import type { EditorNode } from "./editorTypes";
 
@@ -20,9 +15,6 @@ export function loadTree(rootPath: string): Promise<EditorNode> {
   return invoke<EditorNode>("editor_load_tree", { rootPath }).then(attachExpansionDefaults);
 }
 
-// The Rust side has no concept of isExpanded (that's client-only UI
-// state) -- every node loaded fresh from disk starts collapsed, same
-// as the Android version's buildNode().
 function attachExpansionDefaults(node: EditorNode): EditorNode {
   return {
     ...node,
@@ -37,6 +29,10 @@ export function isLikelyBinary(path: string): Promise<boolean> {
 
 export function readFile(path: string): Promise<string> {
   return invoke("editor_read_file", { path });
+}
+
+export function readFileBase64(path: string): Promise<string> {
+  return invoke("editor_read_file_base64", { path });
 }
 
 export function writeFile(path: string, content: string): Promise<void> {

@@ -15,6 +15,16 @@ interface ChatAreaProps {
   onSaveEdit: (id: string, newText: string) => void;
 }
 
+function TypingDots() {
+  return (
+    <div className="typing-dots">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
 export function ChatArea({
   messages,
   onSend,
@@ -31,6 +41,8 @@ export function ChatArea({
   const [thumbHeight, setThumbHeight] = useState(0);
   const [thumbTop, setThumbTop] = useState(0);
   const draggingRef = useRef(false);
+
+  const showTyping = sending && (messages.length === 0 || messages[messages.length - 1].role === "user");
 
   function updateThumb() {
     const el = scrollRef.current;
@@ -55,7 +67,7 @@ export function ChatArea({
 
   useEffect(() => {
     updateThumb();
-  }, [messages]);
+  }, [messages, showTyping]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -131,6 +143,11 @@ export function ChatArea({
               onSaveEdit={(newText) => onSaveEdit(m.id, newText)}
             />
           ))}
+          {showTyping && (
+            <div className="message-row message-row-assistant">
+              <TypingDots />
+            </div>
+          )}
         </div>
 
         <div className="chat-scrollbar-track" ref={trackRef}>
