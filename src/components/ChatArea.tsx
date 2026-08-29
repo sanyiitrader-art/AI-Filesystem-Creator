@@ -7,6 +7,7 @@ interface ChatAreaProps {
   messages: Message[];
   onSend: (text: string, attachments: Attachment[]) => void;
   sending: boolean;
+  onStop: () => void;
   latestUserId?: string;
   latestAiId?: string;
   onLike: (id: string) => void;
@@ -29,6 +30,7 @@ export function ChatArea({
   messages,
   onSend,
   sending,
+  onStop,
   latestUserId,
   latestAiId,
   onLike,
@@ -161,7 +163,7 @@ export function ChatArea({
         </div>
       </div>
 
-      <MessageInput onSend={onSend} disabled={sending} />
+      <MessageInput onSend={onSend} disabled={sending} sending={sending} onStop={onStop} />
     </div>
   );
 }

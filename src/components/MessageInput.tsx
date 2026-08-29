@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Plus, Send, X } from "lucide-react";
+import { Pause, Plus, Send, X } from "lucide-react";
 import type { Attachment } from "../lib/types";
 
 const MAX_ATTACHMENTS = 20;
@@ -7,9 +7,11 @@ const MAX_ATTACHMENTS = 20;
 interface MessageInputProps {
   onSend: (text: string, attachments: Attachment[]) => void;
   disabled: boolean;
+  sending: boolean;
+  onStop: () => void;
 }
 
-export function MessageInput({ onSend, disabled }: MessageInputProps) {
+export function MessageInput({ onSend, disabled, sending, onStop }: MessageInputProps) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
   function handleSend() {
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
-    if (disabled) return;
+    if (sending) return;
 
     onSend(trimmed, attachments);
     setText("");
@@ -76,11 +78,7 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
           {attachments.map((a) => (
             <div className="attachment-chip" key={a.name} title={a.name}>
               <span className="attachment-chip-name">{a.name}</span>
-              <button
-                className="attachment-chip-remove"
-                onClick={() => removeAttachment(a.name)}
-                aria-label={`Remove ${a.name}`}
-              >
+              <button className="attachment-chip-remove" onClick={() => removeAttachment(a.name)} aria-label={`Remove ${a.name}`}>
                 <X size={12} />
               </button>
             </div>
@@ -99,14 +97,7 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
         >
           <Plus size={18} />
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".txt,.md"
-          multiple
-          hidden
-          onChange={handleFilesSelected}
-        />
+        <input ref={fileInputRef} type="file" accept=".txt,.md" multiple hidden onChange={handleFilesSelected} />
 
         <textarea
           className="message-input-textarea"
@@ -118,14 +109,15 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
           disabled={disabled}
         />
 
-        <button
-          className="icon-button icon-button-send"
-          onClick={handleSend}
-          aria-label="Send"
-          disabled={disabled}
-        >
-          <Send size={18} />
-        </button>
+        {sending ? (
+          <button className="icon-button icon-button-send" onClick={onStop} aria-label="Stop generating">
+            <Pause size={18} />
+          </button>
+        ) : (
+          <button className="icon-button icon-button-send" onClick={handleSend} aria-label="Send">
+            <Send size={18} />
+          </button>
+        )}
       </div>
     </div>
   );

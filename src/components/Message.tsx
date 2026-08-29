@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip, Download } from "lucide-react";
 import { highlightSyntax, isHighlightableExtension } from "../lib/syntaxHighlighter";
+import { parseInline } from "../lib/markdownInline";
 import type { Message as MessageType, Attachment } from "../lib/types";
 
 interface MessageBubbleProps {
@@ -164,25 +165,13 @@ function AiMessage({
       <FormattedContent text={message.content} />
 
       <div className={`message-action-row${hovered ? " message-action-row-visible" : ""}`}>
-        <button
-          className="message-hover-btn"
-          title="Copy"
-          onClick={() => navigator.clipboard.writeText(message.content)}
-        >
+        <button className="message-hover-btn" title="Copy" onClick={() => navigator.clipboard.writeText(message.content)}>
           <Copy size={14} />
         </button>
-        <button
-          className="message-hover-btn"
-          title="Like"
-          onClick={onLike}
-        >
+        <button className="message-hover-btn" title="Like" onClick={onLike}>
           <ThumbsUp size={14} color={message.liked ? "var(--color-mint)" : undefined} />
         </button>
-        <button
-          className="message-hover-btn"
-          title="Dislike"
-          onClick={onDislike}
-        >
+        <button className="message-hover-btn" title="Dislike" onClick={onDislike}>
           <ThumbsDown size={14} color={message.disliked ? "var(--color-mint)" : undefined} />
         </button>
         <button
@@ -223,6 +212,27 @@ function downloadCodeSnippet(language: string, code: string) {
   URL.revokeObjectURL(url);
 }
 
+function renderInline(text: string, keyPrefix: string) {
+  const segments = parseInline(text);
+  return segments.map((seg, i) => {
+    const k = `${keyPrefix}-${i}`;
+    if (seg.code) return <code key={k} className="message-inline-code">{seg.text}</code>;
+    if (seg.href) {
+      return (
+        <a key={k} href={seg.href} target="_blank" rel="noreferrer" className="message-link">
+          {seg.text}
+        </a>
+      );
+    }
+    let cls = "";
+    if (seg.bold && seg.italic) cls = "md-bold-italic";
+    else if (seg.bold) cls = "md-bold";
+    else if (seg.italic) cls = "md-italic";
+    if (seg.strike) cls = cls ? `${cls} md-strike` : "md-strike";
+    return cls ? <span key={k} className={cls}>{seg.text}</span> : <span key={k}>{seg.text}</span>;
+  });
+}
+
 function FormattedContent({ text }: { text: string }) {
   const lines = text.split("\n");
   const blocks: JSX.Element[] = [];
@@ -241,47 +251,40 @@ function FormattedContent({ text }: { text: string }) {
         i++;
       }
       if (i < lines.length) i++;
-      // codeText is the exact original string, untouched -- used
-      // as-is for Copy/Download. Only the rendered <code> below uses
-      // separately colored spans derived from it.
       const codeText = codeLines.join("\n");
       const ext = extensionForLanguage(language);
       const segments = isHighlightableExtension(ext)
         ? highlightSyntax(codeText, ext)
         : [{ text: codeText, className: null as string | null }];
+      const gutterText = codeLines.map((_, idx) => String(idx + 1)).join("\n");
 
       blocks.push(
         <div className="message-code-block" key={key++}>
           <div className="message-code-header">
             <span className="message-code-lang">{language}</span>
             <div className="message-code-actions">
-              <button
-                className="message-code-btn"
-                title="Copy code"
-                onClick={() => navigator.clipboard.writeText(codeText)}
-              >
+              <button className="message-code-btn" title="Copy code" onClick={() => navigator.clipboard.writeText(codeText)}>
                 <Copy size={13} />
               </button>
-              <button
-                className="message-code-btn"
-                title="Download code"
-                onClick={() => downloadCodeSnippet(language, codeText)}
-              >
+              <button className="message-code-btn" title="Download code" onClick={() => downloadCodeSnippet(language, codeText)}>
                 <Download size={13} />
               </button>
             </div>
           </div>
-          <pre className="message-code-body">
-            <code>
-              {segments.map((seg, idx) =>
-                seg.className ? (
-                  <span key={idx} className={seg.className}>{seg.text}</span>
-                ) : (
-                  <span key={idx}>{seg.text}</span>
-                )
-              )}
-            </code>
-          </pre>
+          <div className="message-code-body-row">
+            <pre className="message-code-gutter">{gutterText}</pre>
+            <pre className="message-code-body">
+              <code>
+                {segments.map((seg, idx) =>
+                  seg.className ? (
+                    <span key={idx} className={seg.className}>{seg.text}</span>
+                  ) : (
+                    <span key={idx}>{seg.text}</span>
+                  )
+                )}
+              </code>
+            </pre>
+          </div>
         </div>
       );
       continue;
@@ -293,10 +296,29 @@ function FormattedContent({ text }: { text: string }) {
       const HeadingTag = (`h${Math.min(level + 2, 6)}` as unknown) as "h3";
       blocks.push(
         <HeadingTag className="message-heading" key={key++}>
-          {headingMatch[2]}
+          {renderInline(headingMatch[2], `h${key}`)}
         </HeadingTag>
       );
       i++;
+      continue;
+    }
+
+    if (line.trim().startsWith(">")) {
+      const quoteLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith(">")) {
+        quoteLines.push(lines[i].trim().replace(/^>\s?/, ""));
+        i++;
+      }
+      blocks.push(
+        <blockquote className="message-blockquote" key={key++}>
+          {quoteLines.map((l, idx) => (
+            <span key={idx}>
+              {renderInline(l, `bq${key}-${idx}`)}
+              {idx < quoteLines.length - 1 && <br />}
+            </span>
+          ))}
+        </blockquote>
+      );
       continue;
     }
 
@@ -309,9 +331,25 @@ function FormattedContent({ text }: { text: string }) {
       blocks.push(
         <ul className="message-list" key={key++}>
           {items.map((item, idx) => (
-            <li key={idx}>{item}</li>
+            <li key={idx}>{renderInline(item, `li${key}-${idx}`)}</li>
           ))}
         </ul>
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line.trim())) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        <ol className="message-list" key={key++}>
+          {items.map((item, idx) => (
+            <li key={idx}>{renderInline(item, `ol${key}-${idx}`)}</li>
+          ))}
+        </ol>
       );
       continue;
     }
@@ -326,7 +364,9 @@ function FormattedContent({ text }: { text: string }) {
       i < lines.length &&
       lines[i].trim() !== "" &&
       !lines[i].trim().startsWith("```") &&
+      !lines[i].trim().startsWith(">") &&
       !/^[-*]\s+/.test(lines[i].trim()) &&
+      !/^\d+\.\s+/.test(lines[i].trim()) &&
       !/^#{1,3}\s+/.test(lines[i])
     ) {
       paraLines.push(lines[i]);
@@ -336,7 +376,7 @@ function FormattedContent({ text }: { text: string }) {
       <p className="message-paragraph" key={key++}>
         {paraLines.map((l, idx) => (
           <span key={idx}>
-            {l}
+            {renderInline(l, `p${key}-${idx}`)}
             {idx < paraLines.length - 1 && <br />}
           </span>
         ))}
