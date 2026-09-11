@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Copy, Edit2, RefreshCw, ThumbsDown, ThumbsUp, Paperclip, Download } from "lucide-react";
 import { highlightSyntax, isHighlightableExtension } from "../lib/syntaxHighlighter";
-import { renderInlineMarkdown } from "../lib/inlineMarkdown";
+import { parseInline, type InlineSegment } from "../lib/markdownInline";
 import type { Message as MessageType, Attachment } from "../lib/types";
 
 interface MessageBubbleProps {
@@ -41,6 +41,47 @@ export function MessageBubble({
       onRetry={onRetry}
     />
   );
+}
+
+// Renders parseInline()'s flat InlineSegment[] (text + bold/italic/
+// strike/code/href booleans) as JSX -- lives here rather than in
+// markdownInline.ts because that file is plain .ts and can't contain
+// JSX; this keeps that file as the single source of truth for the
+// parsing logic while this component owns only the rendering.
+function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
+  return parseInline(text).map((seg: InlineSegment, idx: number) => {
+    const key = `${keyPrefix}-${idx}`;
+
+    if (seg.code) {
+      return (
+        <span key={key} className="inline-token">
+          {seg.text}
+        </span>
+      );
+    }
+
+    if (seg.href) {
+      return (
+        
+          key={key}
+          href={seg.href}
+          className="message-link"
+          onClick={(e) => {
+            e.preventDefault();
+            window.open(seg.href, "_blank");
+          }}
+        >
+          {seg.text}
+        </a>
+      );
+    }
+
+    let node: JSX.Element = <>{seg.text}</>;
+    if (seg.bold) node = <strong>{node}</strong>;
+    if (seg.italic) node = <em>{node}</em>;
+    if (seg.strike) node = <s>{node}</s>;
+    return <span key={key}>{node}</span>;
+  });
 }
 
 function UserMessage({
@@ -156,8 +197,6 @@ function AiMessage({
 }) {
   const [hovered, setHovered] = useState(false);
 
-  // Stopped-generation placeholder: distinct grey/watermark status,
-  // no Copy/Like/Dislike, Retry only.
   if (message.is_stopped) {
     return (
       <div
@@ -316,15 +355,13 @@ function FormattedContent({ text }: { text: string }) {
       continue;
     }
 
-    // Widened from {1,3} to {1,6} -- this was the entire cause of
-    // H4/H5/H6 rendering as literal "#### text" instead of headings.
     const headingMatch = /^(#{1,6})\s+(.*)$/.exec(line);
     if (headingMatch) {
       const level = headingMatch[1].length;
       const HeadingTag = (`h${Math.min(level + 2, 6)}` as unknown) as "h3";
       blocks.push(
         <HeadingTag className="message-heading" key={key++}>
-          {renderInlineMarkdown(headingMatch[2], `h${key}`)}
+          {renderInlineSegments(headingMatch[2], `h${key}`)}
         </HeadingTag>
       );
       i++;
@@ -342,7 +379,7 @@ function FormattedContent({ text }: { text: string }) {
         <blockquote className="message-blockquote" key={quoteKey}>
           {quoteLines.map((l, idx) => (
             <span key={idx}>
-              {renderInlineMarkdown(l, `bq${quoteKey}-${idx}`)}
+              {renderInlineSegments(l, `bq${quoteKey}-${idx}`)}
               {idx < quoteLines.length - 1 && <br />}
             </span>
           ))}
@@ -361,7 +398,7 @@ function FormattedContent({ text }: { text: string }) {
       blocks.push(
         <ul className="message-list" key={listKey}>
           {items.map((item, idx) => (
-            <li key={idx}>{renderInlineMarkdown(item, `li${listKey}-${idx}`)}</li>
+            <li key={idx}>{renderInlineSegments(item, `li${listKey}-${idx}`)}</li>
           ))}
         </ul>
       );
@@ -390,7 +427,7 @@ function FormattedContent({ text }: { text: string }) {
       <p className="message-paragraph" key={paraKey}>
         {paraLines.map((l, idx) => (
           <span key={idx}>
-            {renderInlineMarkdown(l, `p${paraKey}-${idx}`)}
+            {renderInlineSegments(l, `p${paraKey}-${idx}`)}
             {idx < paraLines.length - 1 && <br />}
           </span>
         ))}
