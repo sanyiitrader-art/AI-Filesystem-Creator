@@ -53,6 +53,13 @@ export interface Message {
   liked: boolean;
   disliked: boolean;
   attachments: Attachment[];
+  // Client-generated status messages, never real AI output. Both
+  // default to false. Messages tagged either true are excluded from
+  // the history sent to the model (see App.tsx's runTurn) -- fixes a
+  // failed/stopped exchange getting fed back to the AI as real
+  // context and confusing the next unrelated prompt.
+  is_error: boolean;
+  is_stopped: boolean;
 }
 
 export interface Conversation {

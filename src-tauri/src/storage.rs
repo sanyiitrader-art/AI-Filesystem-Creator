@@ -25,16 +25,19 @@ pub struct Message {
     pub role: MessageRole,
     pub content: String,
     pub created_at: String,
-    // Native-chat feature additions. #[serde(default)] means older
-    // saved conversation files (written before this feature existed)
-    // still deserialize fine -- they simply get liked=false,
-    // disliked=false, attachments=[].
     #[serde(default)]
     pub liked: bool,
     #[serde(default)]
     pub disliked: bool,
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    // Client-generated status messages, never real AI output. Both
+    // default to false so older saved conversation files still
+    // deserialize fine.
+    #[serde(default)]
+    pub is_error: bool,
+    #[serde(default)]
+    pub is_stopped: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

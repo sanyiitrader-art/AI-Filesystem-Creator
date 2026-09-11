@@ -15,7 +15,9 @@ import type { Attachment, Conversation, Message, FsOperationResult } from "./lib
 function makeMessage(
   role: Message["role"],
   content: string,
-  attachments: Attachment[] = []
+  attachments: Attachment[] = [],
+  isError: boolean = false,
+  isStopped: boolean = false
 ): Message {
   return {
     id: crypto.randomUUID(),
@@ -25,17 +27,29 @@ function makeMessage(
     liked: false,
     disliked: false,
     attachments,
+    is_error: isError,
+    is_stopped: isStopped,
   };
 }
 
 function summarizeResultsForAi(results: FsOperationResult[]): string {
   const lines: string[] = [];
   for (const r of results) {
-    for (const d of r.created_directories) lines.push(`Created directory: ${r.root_path}\\${d}`);
-    for (const f of r.created_files) lines.push(`Created file: ${r.root_path}\\${f}`);
-    for (const e of r.errors) lines.push(`Failed (${e.error}) for ${e.item_kind} "${r.root_path}\\${e.path}"`);
+    for (const d of r.created_directories) {
+      lines.push(`Created directory: ${r.root_path}\\${d}`);
+    }
+    for (const f of r.created_files) {
+      lines.push(`Created file: ${r.root_path}\\${f}`);
+    }
+    for (const e of r.errors) {
+      lines.push(
+        `Failed (${e.error}) for ${e.item_kind} "${r.root_path}\\${e.path}"`
+      );
+    }
   }
-  return lines.length > 0 ? `[Execution result]\n${lines.join("\n")}` : "[Execution result]\nNo items were created.";
+  return lines.length > 0
+    ? `[Execution result]\n${lines.join("\n")}`
+    : "[Execution result]\nNo items were created.";
 }
 
 function deriveTitle(firstUserText: string): string {
@@ -51,10 +65,6 @@ function findLastIndex<T>(arr: T[], predicate: (item: T) => boolean): number {
   return -1;
 }
 
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
-
 type TopLevelView = "ai" | "editor";
 
 export default function App() {
@@ -63,7 +73,14 @@ export default function App() {
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [sending, setSending] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
+
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Bumped on every new generation AND on Pause. Any async completion
+  // (success or failure) captures its own token at launch time and
+  // checks it against this current value before writing anything back
+  // -- a stale/superseded result is silently discarded regardless of
+  // what caused the staleness.
+  const generationTokenRef = useRef(0);
 
   useEffect(() => {
     createConversation().then(setConversation).catch(() => {});
@@ -91,7 +108,13 @@ export default function App() {
     attachments: Attachment[],
     signal: AbortSignal
   ): Promise<string> {
-    const turn = await sendTurn(historyBeforeThisTurn, userText, attachments, signal);
+    // Never send client-side error/stopped placeholders to the model
+    // as if they were real conversation turns -- this is the actual
+    // fix for a later unrelated prompt appearing to "continue" an
+    // earlier failed/stopped request.
+    const cleanHistory = historyBeforeThisTurn.filter((m) => !m.is_error && !m.is_stopped);
+
+    const turn = await sendTurn(cleanHistory, userText, attachments, signal);
 
     if (!turn.fsRequest) return turn.replyText;
 
@@ -99,7 +122,7 @@ export default function App() {
     const summary = summarizeResultsForAi(results);
 
     const followUpHistory: Message[] = [
-      ...historyBeforeThisTurn,
+      ...cleanHistory,
       makeMessage("user", userText, attachments),
       makeMessage("assistant", turn.replyText),
     ];
@@ -107,12 +130,32 @@ export default function App() {
     return followUp.replyText;
   }
 
-  function handleStopGeneration() {
+  function isCancelError(err: unknown): boolean {
+    return err instanceof DOMException && err.name === "AbortError";
+  }
+
+  function handlePause() {
+    generationTokenRef.current += 1;
     abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+
+    setConversation((prev) => {
+      if (!prev) return prev;
+      // prev already reflects "prompt in place, no response yet" for
+      // whichever handler started this generation -- append the
+      // stopped placeholder right into that assistant slot.
+      const stoppedMsg = makeMessage("assistant", "", [], false, true);
+      const updated: Conversation = { ...prev, messages: [...prev.messages, stoppedMsg] };
+      saveConversation(updated);
+      return updated;
+    });
+
+    setSending(false);
   }
 
   async function handleSend(text: string, attachments: Attachment[]) {
     if (!conversation || sending) return;
+    if (!text.trim() && attachments.length === 0) return;
 
     const userMessage = makeMessage("user", text, attachments);
     const historyBefore = conversation.messages;
@@ -125,28 +168,38 @@ export default function App() {
       updated_at: new Date().toISOString(),
     };
     setConversation(working);
+    setSending(true);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    setSending(true);
+    generationTokenRef.current += 1;
+    const myToken = generationTokenRef.current;
 
     try {
       const assistantText = await runTurn(historyBefore, text, attachments, controller.signal);
+      if (myToken !== generationTokenRef.current) return;
       const assistantMessage = makeMessage("assistant", assistantText);
-      working = { ...working, messages: [...working.messages, assistantMessage], updated_at: new Date().toISOString() };
+      working = {
+        ...working,
+        messages: [...working.messages, assistantMessage],
+        updated_at: new Date().toISOString(),
+      };
       setConversation(working);
       await persist(working);
     } catch (err) {
-      if (!isAbortError(err)) {
+      if (myToken !== generationTokenRef.current) return;
+      if (!isCancelError(err)) {
         const errorText = err instanceof Error ? err.message : "Something went wrong.";
-        const errorMessage = makeMessage("assistant", errorText);
+        const errorMessage = makeMessage("assistant", errorText, [], true, false);
         working = { ...working, messages: [...working.messages, errorMessage] };
         setConversation(working);
         await persist(working);
       }
     } finally {
-      setSending(false);
-      abortControllerRef.current = null;
+      if (myToken === generationTokenRef.current) {
+        setSending(false);
+        abortControllerRef.current = null;
+      }
     }
   }
 
@@ -159,30 +212,47 @@ export default function App() {
     if (userMsg.role !== "user") return;
 
     const historyBefore = messages.slice(0, assistantIndex - 1);
-    const stripped: Conversation = { ...conversation, messages: messages.slice(0, assistantIndex) };
+
+    const stripped: Conversation = {
+      ...conversation,
+      messages: messages.slice(0, assistantIndex),
+    };
     setConversation(stripped);
+    setSending(true);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    setSending(true);
+    generationTokenRef.current += 1;
+    const myToken = generationTokenRef.current;
 
     try {
       const assistantText = await runTurn(historyBefore, userMsg.content, userMsg.attachments, controller.signal);
+      if (myToken !== generationTokenRef.current) return;
       const newAssistantMsg = makeMessage("assistant", assistantText);
-      const updated: Conversation = { ...stripped, messages: [...stripped.messages, newAssistantMsg], updated_at: new Date().toISOString() };
+      const updated: Conversation = {
+        ...stripped,
+        messages: [...stripped.messages, newAssistantMsg],
+        updated_at: new Date().toISOString(),
+      };
       setConversation(updated);
       await saveConversation(updated);
     } catch (err) {
-      if (!isAbortError(err)) {
+      if (myToken !== generationTokenRef.current) return;
+      if (!isCancelError(err)) {
         const errorText = err instanceof Error ? err.message : "Something went wrong.";
-        const errorMessage = makeMessage("assistant", errorText);
-        const updated: Conversation = { ...stripped, messages: [...stripped.messages, errorMessage] };
+        const errorMessage = makeMessage("assistant", errorText, [], true, false);
+        const updated: Conversation = {
+          ...stripped,
+          messages: [...stripped.messages, errorMessage],
+        };
         setConversation(updated);
         await saveConversation(updated);
       }
     } finally {
-      setSending(false);
-      abortControllerRef.current = null;
+      if (myToken === generationTokenRef.current) {
+        setSending(false);
+        abortControllerRef.current = null;
+      }
     }
   }
 
@@ -197,30 +267,44 @@ export default function App() {
     const historyBefore = messages.slice(0, userIndex);
     const editedUserMsg: Message = { ...original, content: newText };
 
-    let working: Conversation = { ...conversation, messages: [...historyBefore, editedUserMsg], updated_at: new Date().toISOString() };
+    let working: Conversation = {
+      ...conversation,
+      messages: [...historyBefore, editedUserMsg],
+      updated_at: new Date().toISOString(),
+    };
     setConversation(working);
+    setSending(true);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    setSending(true);
+    generationTokenRef.current += 1;
+    const myToken = generationTokenRef.current;
 
     try {
       const assistantText = await runTurn(historyBefore, newText, original.attachments, controller.signal);
+      if (myToken !== generationTokenRef.current) return;
       const assistantMessage = makeMessage("assistant", assistantText);
-      working = { ...working, messages: [...working.messages, assistantMessage], updated_at: new Date().toISOString() };
+      working = {
+        ...working,
+        messages: [...working.messages, assistantMessage],
+        updated_at: new Date().toISOString(),
+      };
       setConversation(working);
       await persist(working);
     } catch (err) {
-      if (!isAbortError(err)) {
+      if (myToken !== generationTokenRef.current) return;
+      if (!isCancelError(err)) {
         const errorText = err instanceof Error ? err.message : "Something went wrong.";
-        const errorMessage = makeMessage("assistant", errorText);
+        const errorMessage = makeMessage("assistant", errorText, [], true, false);
         working = { ...working, messages: [...working.messages, errorMessage] };
         setConversation(working);
         await persist(working);
       }
     } finally {
-      setSending(false);
-      abortControllerRef.current = null;
+      if (myToken === generationTokenRef.current) {
+        setSending(false);
+        abortControllerRef.current = null;
+      }
     }
   }
 
@@ -228,7 +312,9 @@ export default function App() {
     if (!conversation) return;
     const updated: Conversation = {
       ...conversation,
-      messages: conversation.messages.map((m) => (m.id === messageId ? { ...m, liked: !m.liked, disliked: false } : m)),
+      messages: conversation.messages.map((m) =>
+        m.id === messageId ? { ...m, liked: !m.liked, disliked: false } : m
+      ),
     };
     setConversation(updated);
     saveConversation(updated);
@@ -238,7 +324,9 @@ export default function App() {
     if (!conversation) return;
     const updated: Conversation = {
       ...conversation,
-      messages: conversation.messages.map((m) => (m.id === messageId ? { ...m, disliked: !m.disliked, liked: false } : m)),
+      messages: conversation.messages.map((m) =>
+        m.id === messageId ? { ...m, disliked: !m.disliked, liked: false } : m
+      ),
     };
     setConversation(updated);
     saveConversation(updated);
@@ -261,7 +349,12 @@ export default function App() {
         />
         <div className="app-ai-column">
           <div className="app-ai-topbar">
-            <button className="app-editor-entry-btn" onClick={() => setView("editor")} aria-label="Open editor" title="Open editor">
+            <button
+              className="app-editor-entry-btn"
+              onClick={() => setView("editor")}
+              aria-label="Open editor"
+              title="Open editor"
+            >
               <FileText size={18} />
             </button>
           </div>
@@ -270,7 +363,7 @@ export default function App() {
               messages={messages}
               onSend={handleSend}
               sending={sending}
-              onStop={handleStopGeneration}
+              onPause={handlePause}
               latestUserId={latestUserId}
               latestAiId={latestAiId}
               onLike={handleLike}

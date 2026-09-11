@@ -1,17 +1,16 @@
 import { useRef, useState } from "react";
-import { Pause, Plus, Send, X } from "lucide-react";
+import { Plus, Send, X } from "lucide-react";
 import type { Attachment } from "../lib/types";
 
 const MAX_ATTACHMENTS = 20;
 
 interface MessageInputProps {
   onSend: (text: string, attachments: Attachment[]) => void;
-  disabled: boolean;
   sending: boolean;
-  onStop: () => void;
+  onPause: () => void;
 }
 
-export function MessageInput({ onSend, disabled, sending, onStop }: MessageInputProps) {
+export function MessageInput({ onSend, sending, onPause }: MessageInputProps) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -56,18 +55,24 @@ export function MessageInput({ onSend, disabled, sending, onStop }: MessageInput
   function handleSend() {
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
-    if (sending) return;
-
     onSend(trimmed, attachments);
     setText("");
     setAttachments([]);
     setAttachError(null);
   }
 
+  function handleButtonClick() {
+    if (sending) {
+      onPause();
+    } else {
+      handleSend();
+    }
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (!sending) handleSend();
     }
   }
 
@@ -78,7 +83,11 @@ export function MessageInput({ onSend, disabled, sending, onStop }: MessageInput
           {attachments.map((a) => (
             <div className="attachment-chip" key={a.name} title={a.name}>
               <span className="attachment-chip-name">{a.name}</span>
-              <button className="attachment-chip-remove" onClick={() => removeAttachment(a.name)} aria-label={`Remove ${a.name}`}>
+              <button
+                className="attachment-chip-remove"
+                onClick={() => removeAttachment(a.name)}
+                aria-label={`Remove ${a.name}`}
+              >
                 <X size={12} />
               </button>
             </div>
@@ -93,11 +102,18 @@ export function MessageInput({ onSend, disabled, sending, onStop }: MessageInput
           className="icon-button"
           onClick={handleAttachClick}
           aria-label="Attach file"
-          disabled={disabled || attachments.length >= MAX_ATTACHMENTS}
+          disabled={sending || attachments.length >= MAX_ATTACHMENTS}
         >
           <Plus size={18} />
         </button>
-        <input ref={fileInputRef} type="file" accept=".txt,.md" multiple hidden onChange={handleFilesSelected} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt,.md"
+          multiple
+          hidden
+          onChange={handleFilesSelected}
+        />
 
         <textarea
           className="message-input-textarea"
@@ -106,18 +122,26 @@ export function MessageInput({ onSend, disabled, sending, onStop }: MessageInput
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={1}
-          disabled={disabled}
+          disabled={sending}
         />
 
-        {sending ? (
-          <button className="icon-button icon-button-send" onClick={onStop} aria-label="Stop generating">
-            <Pause size={18} />
-          </button>
-        ) : (
-          <button className="icon-button icon-button-send" onClick={handleSend} aria-label="Send">
+        <button
+          className="icon-button icon-button-send"
+          onClick={handleButtonClick}
+          aria-label={sending ? "Stop generating" : "Send"}
+        >
+          {sending ? (
+            // Modern AI-generation stop control: mint rounded square
+            // with a smaller centered charcoal rounded square inside,
+            // replacing the previous plain Square icon (which read as
+            // a generic media-player pause button).
+            <span className="pause-square-outer">
+              <span className="pause-square-inner" />
+            </span>
+          ) : (
             <Send size={18} />
-          </button>
-        )}
+          )}
+        </button>
       </div>
     </div>
   );
