@@ -43,14 +43,9 @@ export function MessageBubble({
   );
 }
 
-// Renders parseInline()'s flat InlineSegment[] (text + bold/italic/
-// strike/code/href booleans) as JSX -- lives here rather than in
-// markdownInline.ts because that file is plain .ts and can't contain
-// JSX; this keeps that file as the single source of truth for the
-// parsing logic while this component owns only the rendering.
 function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
   return parseInline(text).map((seg: InlineSegment, idx: number) => {
-    const key = `${keyPrefix}-${idx}`;
+    const key = keyPrefix + "-" + idx;
 
     if (seg.code) {
       return (
@@ -61,14 +56,15 @@ function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
     }
 
     if (seg.href) {
+      const url = seg.href;
       return (
         
           key={key}
-          href={seg.href}
+          href={url}
           className="message-link"
           onClick={(e) => {
             e.preventDefault();
-            window.open(seg.href, "_blank");
+            window.open(url, "_blank");
           }}
         >
           {seg.text}
@@ -76,10 +72,16 @@ function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
       );
     }
 
-    let node: JSX.Element = <>{seg.text}</>;
-    if (seg.bold) node = <strong>{node}</strong>;
-    if (seg.italic) node = <em>{node}</em>;
-    if (seg.strike) node = <s>{node}</s>;
+    let node: JSX.Element = <span>{seg.text}</span>;
+    if (seg.bold) {
+      node = <strong>{node}</strong>;
+    }
+    if (seg.italic) {
+      node = <em>{node}</em>;
+    }
+    if (seg.strike) {
+      node = <s>{node}</s>;
+    }
     return <span key={key}>{node}</span>;
   });
 }
@@ -205,7 +207,7 @@ function AiMessage({
         onMouseLeave={() => setHovered(false)}
       >
         <div className="message-stopped-text">You stopped this response.</div>
-        <div className={`message-action-row${hovered ? " message-action-row-visible" : ""}`}>
+        <div className={"message-action-row" + (hovered ? " message-action-row-visible" : "")}>
           <button
             className="message-hover-btn"
             title={isLatest ? "Retry" : "Only the latest response can be retried"}
@@ -227,7 +229,7 @@ function AiMessage({
     >
       <FormattedContent text={message.content} />
 
-      <div className={`message-action-row${hovered ? " message-action-row-visible" : ""}`}>
+      <div className={"message-action-row" + (hovered ? " message-action-row-visible" : "")}>
         <button
           className="message-hover-btn"
           title="Copy"
@@ -274,7 +276,7 @@ function downloadCodeSnippet(language: string, code: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `snippet_${Date.now()}.${ext}`;
+  a.download = "snippet_" + Date.now() + "." + ext;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -358,10 +360,10 @@ function FormattedContent({ text }: { text: string }) {
     const headingMatch = /^(#{1,6})\s+(.*)$/.exec(line);
     if (headingMatch) {
       const level = headingMatch[1].length;
-      const HeadingTag = (`h${Math.min(level + 2, 6)}` as unknown) as "h3";
+      const HeadingTag = ("h" + Math.min(level + 2, 6)) as "h3";
       blocks.push(
         <HeadingTag className="message-heading" key={key++}>
-          {renderInlineSegments(headingMatch[2], `h${key}`)}
+          {renderInlineSegments(headingMatch[2], "h" + key)}
         </HeadingTag>
       );
       i++;
@@ -379,7 +381,7 @@ function FormattedContent({ text }: { text: string }) {
         <blockquote className="message-blockquote" key={quoteKey}>
           {quoteLines.map((l, idx) => (
             <span key={idx}>
-              {renderInlineSegments(l, `bq${quoteKey}-${idx}`)}
+              {renderInlineSegments(l, "bq" + quoteKey + "-" + idx)}
               {idx < quoteLines.length - 1 && <br />}
             </span>
           ))}
@@ -398,7 +400,7 @@ function FormattedContent({ text }: { text: string }) {
       blocks.push(
         <ul className="message-list" key={listKey}>
           {items.map((item, idx) => (
-            <li key={idx}>{renderInlineSegments(item, `li${listKey}-${idx}`)}</li>
+            <li key={idx}>{renderInlineSegments(item, "li" + listKey + "-" + idx)}</li>
           ))}
         </ul>
       );
@@ -427,7 +429,7 @@ function FormattedContent({ text }: { text: string }) {
       <p className="message-paragraph" key={paraKey}>
         {paraLines.map((l, idx) => (
           <span key={idx}>
-            {renderInlineSegments(l, `p${paraKey}-${idx}`)}
+            {renderInlineSegments(l, "p" + paraKey + "-" + idx)}
             {idx < paraLines.length - 1 && <br />}
           </span>
         ))}
