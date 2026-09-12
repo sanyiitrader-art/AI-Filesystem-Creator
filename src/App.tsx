@@ -32,6 +32,28 @@ function makeMessage(
   };
 }
 
+// A turn that never completed (stopped or failed) must not leave its
+// user message dangling/unanswered in what gets sent to the model --
+// removing only the assistant placeholder left an orphaned user turn
+// right before the next prompt, and the model reasonably treated the
+// next prompt as continuing that unfinished request. This drops BOTH
+// halves of any never-completed turn from the API-bound history,
+// while leaving both fully visible in the UI.
+function buildCleanHistory(messages: Message[]): Message[] {
+  const result: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === "assistant" && (m.is_error || m.is_stopped)) {
+      if (result.length > 0 && result[result.length - 1].role === "user") {
+        result.pop();
+      }
+      continue;
+    }
+    result.push(m);
+  }
+  return result;
+}
+
 function summarizeResultsForAi(results: FsOperationResult[]): string {
   const lines: string[] = [];
   for (const r of results) {
@@ -75,11 +97,6 @@ export default function App() {
   const [refreshToken, setRefreshToken] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  // Bumped on every new generation AND on Pause. Any async completion
-  // (success or failure) captures its own token at launch time and
-  // checks it against this current value before writing anything back
-  // -- a stale/superseded result is silently discarded regardless of
-  // what caused the staleness.
   const generationTokenRef = useRef(0);
 
   useEffect(() => {
@@ -108,11 +125,7 @@ export default function App() {
     attachments: Attachment[],
     signal: AbortSignal
   ): Promise<string> {
-    // Never send client-side error/stopped placeholders to the model
-    // as if they were real conversation turns -- this is the actual
-    // fix for a later unrelated prompt appearing to "continue" an
-    // earlier failed/stopped request.
-    const cleanHistory = historyBeforeThisTurn.filter((m) => !m.is_error && !m.is_stopped);
+    const cleanHistory = buildCleanHistory(historyBeforeThisTurn);
 
     const turn = await sendTurn(cleanHistory, userText, attachments, signal);
 
@@ -141,9 +154,6 @@ export default function App() {
 
     setConversation((prev) => {
       if (!prev) return prev;
-      // prev already reflects "prompt in place, no response yet" for
-      // whichever handler started this generation -- append the
-      // stopped placeholder right into that assistant slot.
       const stoppedMsg = makeMessage("assistant", "", [], false, true);
       const updated: Conversation = { ...prev, messages: [...prev.messages, stoppedMsg] };
       saveConversation(updated);

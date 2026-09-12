@@ -319,11 +319,6 @@ interface CodeLineSegment {
   className: string | null;
 }
 
-// Converts the highlighter's flat, whole-text segment list into one
-// array of segments PER LINE. This is what lets each row below pair
-// a line number with exactly that line's highlighted pieces, instead
-// of relying on two separately-flowing columns to coincidentally stay
-// the same height (which is what was actually breaking before).
 function splitSegmentsIntoLines(
   segments: { text: string; className: string | null }[]
 ): CodeLineSegment[][] {
@@ -343,6 +338,9 @@ function splitSegmentsIntoLines(
   return lines;
 }
 
+// Uses a fresh, unique CSS namespace (ai-codebox-*) so there is no
+// possibility of silently colliding with any leftover CSS from
+// earlier attempts at this feature.
 function CodeBlock(props: { language: string; codeText: string }) {
   const { language, codeText } = props;
   const ext = extensionForLanguage(language);
@@ -361,24 +359,24 @@ function CodeBlock(props: { language: string; codeText: string }) {
   }
 
   return (
-    <div className="message-code-block">
-      <div className="message-code-header">
-        <span className="message-code-lang">{language}</span>
-        <div className="message-code-actions">
-          <button className="message-code-btn" title="Copy code" onClick={handleCopy}>
+    <div className="ai-codebox">
+      <div className="ai-codebox-header">
+        <span className="ai-codebox-lang">{language}</span>
+        <div className="ai-codebox-actions">
+          <button className="ai-codebox-btn" title="Copy code" onClick={handleCopy}>
             <Copy size={13} />
           </button>
-          <button className="message-code-btn" title="Download code" onClick={handleDownload}>
+          <button className="ai-codebox-btn" title="Download code" onClick={handleDownload}>
             <Download size={13} />
           </button>
         </div>
       </div>
-      <div className="message-code-scroll">
-        <div className="message-code-rows">
+      <div className="ai-codebox-scroll">
+        <div className="ai-codebox-rows">
           {lines.map((lineSegs, idx) => (
-            <div className="message-code-row" key={idx}>
-              <span className="message-code-linenum">{idx + 1}</span>
-              <span className="message-code-line-content">
+            <div className="ai-codebox-row" key={idx}>
+              <span className="ai-codebox-linenum">{idx + 1}</span>
+              <span className="ai-codebox-line-content">
                 {lineSegs.length === 0
                   ? "\u00A0"
                   : lineSegs.map((seg, segIdx) =>
@@ -399,49 +397,29 @@ function CodeBlock(props: { language: string; codeText: string }) {
   );
 }
 
+// Heading color/size use inline style, not CSS classes -- inline
+// style always wins over an external stylesheet rule regardless of
+// specificity or declaration order, which is what actually guarantees
+// headings render white even if some other rule elsewhere is still
+// setting a heading color.
+const HEADING_STYLE: Record<number, React.CSSProperties> = {
+  1: { color: "var(--color-text-primary)", fontSize: "22px", fontWeight: 700, margin: "10px 0 4px 0" },
+  2: { color: "var(--color-text-primary)", fontSize: "19px", fontWeight: 700, margin: "10px 0 4px 0" },
+  3: { color: "var(--color-text-primary)", fontSize: "17px", fontWeight: 700, margin: "8px 0 4px 0" },
+  4: { color: "var(--color-text-primary)", fontSize: "15.5px", fontWeight: 600, margin: "8px 0 3px 0" },
+  5: { color: "var(--color-text-primary)", fontSize: "14.5px", fontWeight: 600, margin: "6px 0 3px 0" },
+  6: { color: "var(--color-text-primary)", fontSize: "13.5px", fontWeight: 600, margin: "6px 0 3px 0" },
+};
+
 function renderHeadingBlock(headingText: string, level: number, keyNum: number): JSX.Element {
   const content = renderInlineSegments(headingText, "h" + keyNum);
-  const className = "message-heading message-heading-" + level;
-  if (level === 1) {
-    return (
-      <h1 className={className} key={keyNum}>
-        {content}
-      </h1>
-    );
-  }
-  if (level === 2) {
-    return (
-      <h2 className={className} key={keyNum}>
-        {content}
-      </h2>
-    );
-  }
-  if (level === 3) {
-    return (
-      <h3 className={className} key={keyNum}>
-        {content}
-      </h3>
-    );
-  }
-  if (level === 4) {
-    return (
-      <h4 className={className} key={keyNum}>
-        {content}
-      </h4>
-    );
-  }
-  if (level === 5) {
-    return (
-      <h5 className={className} key={keyNum}>
-        {content}
-      </h5>
-    );
-  }
-  return (
-    <h6 className={className} key={keyNum}>
-      {content}
-    </h6>
-  );
+  const style = HEADING_STYLE[level] || HEADING_STYLE[6];
+  if (level === 1) return <h1 style={style} key={keyNum}>{content}</h1>;
+  if (level === 2) return <h2 style={style} key={keyNum}>{content}</h2>;
+  if (level === 3) return <h3 style={style} key={keyNum}>{content}</h3>;
+  if (level === 4) return <h4 style={style} key={keyNum}>{content}</h4>;
+  if (level === 5) return <h5 style={style} key={keyNum}>{content}</h5>;
+  return <h6 style={style} key={keyNum}>{content}</h6>;
 }
 
 function renderQuoteBlock(quoteLines: string[], keyNum: number): JSX.Element {

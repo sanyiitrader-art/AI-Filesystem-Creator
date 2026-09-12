@@ -1486,3 +1486,87 @@ textarea {
   background: var(--color-bg);
   border-radius: 2px;
 }
+.ai-codebox {
+  background: var(--color-bg-input);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.ai-codebox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ai-codebox-lang {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.ai-codebox-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.ai-codebox-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.ai-codebox-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.ai-codebox-scroll {
+  overflow-x: auto;
+}
+
+.ai-codebox-rows {
+  display: inline-block;
+  min-width: 100%;
+  padding: 6px 0;
+  box-sizing: border-box;
+}
+
+.ai-codebox-row {
+  display: flex;
+  align-items: flex-start;
+  line-height: 20px;
+  min-height: 20px;
+}
+
+.ai-codebox-linenum {
+  position: sticky;
+  left: 0;
+  flex-shrink: 0;
+  min-width: 34px;
+  padding: 0 10px 0 12px;
+  text-align: right;
+  background: var(--color-bg-input);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  user-select: none;
+  border-right: 1px solid var(--color-border);
+  z-index: 1;
+}
+
+.ai-codebox-line-content {
+  white-space: pre;
+  padding: 0 12px 0 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  color: var(--color-text-primary);
+}
