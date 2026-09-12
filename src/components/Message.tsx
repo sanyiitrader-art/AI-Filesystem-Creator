@@ -338,9 +338,6 @@ function splitSegmentsIntoLines(
   return lines;
 }
 
-// Uses a fresh, unique CSS namespace (ai-codebox-*) so there is no
-// possibility of silently colliding with any leftover CSS from
-// earlier attempts at this feature.
 function CodeBlock(props: { language: string; codeText: string }) {
   const { language, codeText } = props;
   const ext = extensionForLanguage(language);
@@ -397,11 +394,6 @@ function CodeBlock(props: { language: string; codeText: string }) {
   );
 }
 
-// Heading color/size use inline style, not CSS classes -- inline
-// style always wins over an external stylesheet rule regardless of
-// specificity or declaration order, which is what actually guarantees
-// headings render white even if some other rule elsewhere is still
-// setting a heading color.
 const HEADING_STYLE: Record<number, React.CSSProperties> = {
   1: { color: "var(--color-text-primary)", fontSize: "22px", fontWeight: 700, margin: "10px 0 4px 0" },
   2: { color: "var(--color-text-primary)", fontSize: "19px", fontWeight: 700, margin: "10px 0 4px 0" },
@@ -422,15 +414,68 @@ function renderHeadingBlock(headingText: string, level: number, keyNum: number):
   return <h6 style={style} key={keyNum}>{content}</h6>;
 }
 
-function renderQuoteBlock(quoteLines: string[], keyNum: number): JSX.Element {
-  return (
-    <blockquote className="message-blockquote" key={keyNum}>
-      {quoteLines.map((l, idx) => (
-        <span key={idx}>
-          {renderInlineSegments(l, "bq" + keyNum + "-" + idx)}
-          {idx < quoteLines.length - 1 ? <br /> : null}
+// ---- Nested blockquote support (new) ----
+// A raw quote line's nesting level is how many leading ">" characters
+// it has, each optionally followed by one space (covers both ">>"
+// and "> >" written styles). This is the only new parsing logic --
+// everything else in this file is unchanged.
+interface QuoteLine {
+  level: number;
+  text: string;
+}
+
+function parseQuoteLine(raw: string): QuoteLine {
+  let level = 0;
+  let idx = 0;
+  while (idx < raw.length && raw[idx] === ">") {
+    level++;
+    idx++;
+    if (raw[idx] === " ") idx++;
+  }
+  return { level: Math.max(level, 1), text: raw.slice(idx) };
+}
+
+// Recursively renders one level of quote nesting. Reuses the exact
+// same "message-blockquote" class at every level -- since each
+// nested <blockquote> keeps its own border-left + padding-left, the
+// indentation stacks naturally as levels nest, with zero new CSS
+// needed and zero change to the existing single-level appearance.
+function renderQuoteLevel(items: QuoteLine[], level: number, keyPrefix: string): JSX.Element {
+  const children: JSX.Element[] = [];
+  let i = 0;
+  let childKey = 0;
+
+  while (i < items.length) {
+    if (items[i].level <= level) {
+      const textRun: string[] = [];
+      while (i < items.length && items[i].level <= level) {
+        textRun.push(items[i].text);
+        i++;
+      }
+      childKey++;
+      const runKey = keyPrefix + "-t" + childKey;
+      children.push(
+        <span key={runKey}>
+          {textRun.map((l, idx) => (
+            <span key={idx}>
+              {renderInlineSegments(l, runKey + "-" + idx)}
+              {idx < textRun.length - 1 ? <br /> : null}
+            </span>
+          ))}
         </span>
-      ))}
+      );
+    } else {
+      const runStart = i;
+      while (i < items.length && items[i].level > level) i++;
+      const run = items.slice(runStart, i);
+      childKey++;
+      children.push(renderQuoteLevel(run, level + 1, keyPrefix + "-n" + childKey));
+    }
+  }
+
+  return (
+    <blockquote className="message-blockquote" key={keyPrefix}>
+      {children}
     </blockquote>
   );
 }
@@ -496,13 +541,14 @@ function FormattedContent(props: { text: string }) {
     }
 
     if (line.trim().indexOf(">") === 0) {
-      const quoteLines: string[] = [];
+      const rawQuoteLines: string[] = [];
       while (i < lines.length && lines[i].trim().indexOf(">") === 0) {
-        quoteLines.push(lines[i].trim().replace(/^>\s?/, ""));
+        rawQuoteLines.push(lines[i].trim());
         i = i + 1;
       }
+      const quoteItems = rawQuoteLines.map(parseQuoteLine);
       key = key + 1;
-      blocks.push(renderQuoteBlock(quoteLines, key));
+      blocks.push(renderQuoteLevel(quoteItems, 1, "bq" + key));
       continue;
     }
 
