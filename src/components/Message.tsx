@@ -61,14 +61,15 @@ function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
     }
 
     if (seg.href) {
+      const url = seg.href;
       return (
-        <a>
+        
           key={key}
-          href={seg.href}
+          href={url}
           className="message-link"
           onClick={(e) => {
             e.preventDefault();
-            window.open(seg.href, "_blank");
+            window.open(url, "_blank");
           }}
         >
           {seg.text}
