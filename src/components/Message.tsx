@@ -314,18 +314,43 @@ function downloadCodeSnippet(language: string, code: string) {
   URL.revokeObjectURL(url);
 }
 
+interface CodeLineSegment {
+  text: string;
+  className: string | null;
+}
+
+// Converts the highlighter's flat, whole-text segment list into one
+// array of segments PER LINE. This is what lets each row below pair
+// a line number with exactly that line's highlighted pieces, instead
+// of relying on two separately-flowing columns to coincidentally stay
+// the same height (which is what was actually breaking before).
+function splitSegmentsIntoLines(
+  segments: { text: string; className: string | null }[]
+): CodeLineSegment[][] {
+  const lines: CodeLineSegment[][] = [[]];
+  for (let s = 0; s < segments.length; s++) {
+    const seg = segments[s];
+    const parts = seg.text.split("\n");
+    for (let p = 0; p < parts.length; p++) {
+      if (p > 0) {
+        lines.push([]);
+      }
+      if (parts[p].length > 0) {
+        lines[lines.length - 1].push({ text: parts[p], className: seg.className });
+      }
+    }
+  }
+  return lines;
+}
+
 function CodeBlock(props: { language: string; codeText: string }) {
   const { language, codeText } = props;
   const ext = extensionForLanguage(language);
   const highlightable = isHighlightableExtension(ext);
-  const segments = highlightable
+  const flatSegments = highlightable
     ? highlightSyntax(codeText, ext)
     : [{ text: codeText, className: null as string | null }];
-  const lineCount = codeText.split("\n").length;
-  const lineNumbers: number[] = [];
-  for (let n = 1; n <= lineCount; n++) {
-    lineNumbers.push(n);
-  }
+  const lines = splitSegmentsIntoLines(flatSegments);
 
   function handleCopy() {
     navigator.clipboard.writeText(codeText);
@@ -348,27 +373,26 @@ function CodeBlock(props: { language: string; codeText: string }) {
           </button>
         </div>
       </div>
-      <div className="message-code-block-inner">
-        <div className="message-code-gutter">
-          {lineNumbers.map((n) => (
-            <div key={n}>{n}</div>
+      <div className="message-code-scroll">
+        <div className="message-code-rows">
+          {lines.map((lineSegs, idx) => (
+            <div className="message-code-row" key={idx}>
+              <span className="message-code-linenum">{idx + 1}</span>
+              <span className="message-code-line-content">
+                {lineSegs.length === 0
+                  ? "\u00A0"
+                  : lineSegs.map((seg, segIdx) =>
+                      seg.className ? (
+                        <span key={segIdx} className={seg.className}>
+                          {seg.text}
+                        </span>
+                      ) : (
+                        <span key={segIdx}>{seg.text}</span>
+                      )
+                    )}
+              </span>
+            </div>
           ))}
-        </div>
-        <div className="message-code-body-scroll">
-          <pre>
-            <code>
-              {segments.map((seg, idx) => {
-                if (seg.className) {
-                  return (
-                    <span key={idx} className={seg.className}>
-                      {seg.text}
-                    </span>
-                  );
-                }
-                return <span key={idx}>{seg.text}</span>;
-              })}
-            </code>
-          </pre>
         </div>
       </div>
     </div>
@@ -376,12 +400,47 @@ function CodeBlock(props: { language: string; codeText: string }) {
 }
 
 function renderHeadingBlock(headingText: string, level: number, keyNum: number): JSX.Element {
-  const tagName = "h" + Math.min(level + 2, 6);
-  const HeadingTag = tagName as "h3";
+  const content = renderInlineSegments(headingText, "h" + keyNum);
+  const className = "message-heading message-heading-" + level;
+  if (level === 1) {
+    return (
+      <h1 className={className} key={keyNum}>
+        {content}
+      </h1>
+    );
+  }
+  if (level === 2) {
+    return (
+      <h2 className={className} key={keyNum}>
+        {content}
+      </h2>
+    );
+  }
+  if (level === 3) {
+    return (
+      <h3 className={className} key={keyNum}>
+        {content}
+      </h3>
+    );
+  }
+  if (level === 4) {
+    return (
+      <h4 className={className} key={keyNum}>
+        {content}
+      </h4>
+    );
+  }
+  if (level === 5) {
+    return (
+      <h5 className={className} key={keyNum}>
+        {content}
+      </h5>
+    );
+  }
   return (
-    <HeadingTag className="message-heading" key={keyNum}>
-      {renderInlineSegments(headingText, "h" + keyNum)}
-    </HeadingTag>
+    <h6 className={className} key={keyNum}>
+      {content}
+    </h6>
   );
 }
 
