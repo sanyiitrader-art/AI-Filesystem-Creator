@@ -14,15 +14,17 @@ interface MessageBubbleProps {
   onSaveEdit?: (newText: string) => void;
 }
 
-export function MessageBubble({
-  message,
-  isLatestUserMessage = false,
-  isLatestAiMessage = false,
-  onLike = () => {},
-  onDislike = () => {},
-  onRetry = () => {},
-  onSaveEdit = () => {},
-}: MessageBubbleProps) {
+export function MessageBubble(props: MessageBubbleProps) {
+  const {
+    message,
+    isLatestUserMessage = false,
+    isLatestAiMessage = false,
+    onLike = () => {},
+    onDislike = () => {},
+    onRetry = () => {},
+    onSaveEdit = () => {},
+  } = props;
+
   if (message.role === "user") {
     return (
       <UserMessage
@@ -43,56 +45,64 @@ export function MessageBubble({
   );
 }
 
-// Renders parseInline()'s flat InlineSegment[] (text + bold/italic/
-// strike/code/href booleans) as JSX -- lives here rather than in
-// markdownInline.ts because that file is plain .ts and can't contain
-// JSX; this keeps that file as the single source of truth for the
-// parsing logic while this component owns only the rendering.
-function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
-  return parseInline(text).map((seg: InlineSegment, idx: number) => {
-    const key = `${keyPrefix}-${idx}`;
-
-    if (seg.code) {
-      return (
-        <span key={key} className="inline-token">
-          {seg.text}
-        </span>
-      );
-    }
-
-    if (seg.href) {
-      const url = seg.href;
-      return (
-        
-          key={key}
-          href={url}
-          className="message-link"
-          onClick={(e) => {
-            e.preventDefault();
-            window.open(url, "_blank");
-          }}
-        >
-          {seg.text}
-        </a>
-      );
-    }
-    let node: JSX.Element = <>{seg.text}</>;
-    if (seg.bold) node = <strong>{node}</strong>;
-    if (seg.italic) node = <em>{node}</em>;
-    if (seg.strike) node = <s>{node}</s>;
-    return <span key={key}>{node}</span>;
-  });
+function renderCodeSegment(seg: InlineSegment, key: string): JSX.Element {
+  return (
+    <span key={key} className="inline-token">
+      {seg.text}
+    </span>
+  );
 }
 
-function UserMessage({
-  message,
-  isLatest,
-  onSaveEdit,
-}: {
+function renderLinkSegment(seg: InlineSegment, key: string): JSX.Element {
+  const url = seg.href as string;
+  function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    window.open(url, "_blank");
+  }
+  return (
+    <a key={key} href={url} className="message-link" onClick={handleClick}>
+      {seg.text}
+    </a>
+  );
+}
+
+function renderPlainSegment(seg: InlineSegment, key: string): JSX.Element {
+  let node: JSX.Element = <span>{seg.text}</span>;
+  if (seg.bold) {
+    node = <strong>{node}</strong>;
+  }
+  if (seg.italic) {
+    node = <em>{node}</em>;
+  }
+  if (seg.strike) {
+    node = <s>{node}</s>;
+  }
+  return <span key={key}>{node}</span>;
+}
+
+function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
+  const parsed = parseInline(text);
+  const out: JSX.Element[] = [];
+  for (let idx = 0; idx < parsed.length; idx++) {
+    const seg = parsed[idx];
+    const key = keyPrefix + "-" + idx;
+    if (seg.code) {
+      out.push(renderCodeSegment(seg, key));
+    } else if (seg.href) {
+      out.push(renderLinkSegment(seg, key));
+    } else {
+      out.push(renderPlainSegment(seg, key));
+    }
+  }
+  return out;
+}
+
+function UserMessage(props: {
   message: MessageType;
   isLatest: boolean;
   onSaveEdit: (newText: string) => void;
 }) {
+  const { message, isLatest, onSaveEdit } = props;
   const [hovered, setHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.content);
@@ -182,20 +192,18 @@ function UserMessage({
   );
 }
 
-function AiMessage({
-  message,
-  isLatest,
-  onLike,
-  onDislike,
-  onRetry,
-}: {
+function AiMessage(props: {
   message: MessageType;
   isLatest: boolean;
   onLike: () => void;
   onDislike: () => void;
   onRetry: () => void;
 }) {
+  const { message, isLatest, onLike, onDislike, onRetry } = props;
   const [hovered, setHovered] = useState(false);
+  const actionRowClass = hovered
+    ? "message-action-row message-action-row-visible"
+    : "message-action-row";
 
   if (message.is_stopped) {
     return (
@@ -205,7 +213,7 @@ function AiMessage({
         onMouseLeave={() => setHovered(false)}
       >
         <div className="message-stopped-text">You stopped this response.</div>
-        <div className={`message-action-row${hovered ? " message-action-row-visible" : ""}`}>
+        <div className={actionRowClass}>
           <button
             className="message-hover-btn"
             title={isLatest ? "Retry" : "Only the latest response can be retried"}
@@ -227,7 +235,7 @@ function AiMessage({
     >
       <FormattedContent text={message.content} />
 
-      <div className={`message-action-row${hovered ? " message-action-row-visible" : ""}`}>
+      <div className={actionRowClass}>
         <button
           className="message-hover-btn"
           title="Copy"
@@ -257,74 +265,108 @@ function AiMessage({
 function extensionForLanguage(language: string): string {
   const key = language.trim().toLowerCase();
   const map: Record<string, string> = {
-    python: "py", py: "py", kotlin: "kt", kt: "kt",
-    javascript: "js", js: "js", typescript: "ts", ts: "ts",
-    java: "java", c: "c", cpp: "cpp", "c++": "cpp",
-    csharp: "cs", "c#": "cs", cs: "cs", html: "html", css: "css",
-    json: "json", bash: "sh", sh: "sh", shell: "sh", sql: "sql",
-    ruby: "rb", rb: "rb", php: "php", go: "go", rust: "rs", rs: "rs",
-    swift: "swift", xml: "xml", yaml: "yml", yml: "yml",
+    python: "py",
+    py: "py",
+    kotlin: "kt",
+    kt: "kt",
+    javascript: "js",
+    js: "js",
+    typescript: "ts",
+    ts: "ts",
+    java: "java",
+    c: "c",
+    cpp: "cpp",
+    "c++": "cpp",
+    csharp: "cs",
+    "c#": "cs",
+    cs: "cs",
+    html: "html",
+    css: "css",
+    json: "json",
+    bash: "sh",
+    sh: "sh",
+    shell: "sh",
+    sql: "sql",
+    ruby: "rb",
+    rb: "rb",
+    php: "php",
+    go: "go",
+    rust: "rs",
+    rs: "rs",
+    swift: "swift",
+    xml: "xml",
+    yaml: "yml",
+    yml: "yml",
   };
-  return map[key] ?? "txt";
+  const found = map[key];
+  return found ? found : "txt";
 }
 
 function downloadCodeSnippet(language: string, code: string) {
   const ext = extensionForLanguage(language);
+  const fileName = "snippet_" + Date.now() + "." + ext;
   const blob = new Blob([code], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `snippet_${Date.now()}.${ext}`;
+  a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function CodeBlock({ language, codeText }: { language: string; codeText: string }) {
+function CodeBlock(props: { language: string; codeText: string }) {
+  const { language, codeText } = props;
   const ext = extensionForLanguage(language);
-  const segments = isHighlightableExtension(ext)
+  const highlightable = isHighlightableExtension(ext);
+  const segments = highlightable
     ? highlightSyntax(codeText, ext)
     : [{ text: codeText, className: null as string | null }];
   const lineCount = codeText.split("\n").length;
+  const lineNumbers: number[] = [];
+  for (let n = 1; n <= lineCount; n++) {
+    lineNumbers.push(n);
+  }
+
+  function handleCopy() {
+    navigator.clipboard.writeText(codeText);
+  }
+
+  function handleDownload() {
+    downloadCodeSnippet(language, codeText);
+  }
 
   return (
     <div className="message-code-block">
       <div className="message-code-header">
         <span className="message-code-lang">{language}</span>
         <div className="message-code-actions">
-          <button
-            className="message-code-btn"
-            title="Copy code"
-            onClick={() => navigator.clipboard.writeText(codeText)}
-          >
+          <button className="message-code-btn" title="Copy code" onClick={handleCopy}>
             <Copy size={13} />
           </button>
-          <button
-            className="message-code-btn"
-            title="Download code"
-            onClick={() => downloadCodeSnippet(language, codeText)}
-          >
+          <button className="message-code-btn" title="Download code" onClick={handleDownload}>
             <Download size={13} />
           </button>
         </div>
       </div>
       <div className="message-code-block-inner">
         <div className="message-code-gutter">
-          {Array.from({ length: lineCount }, (_, idx) => (
-            <div key={idx}>{idx + 1}</div>
+          {lineNumbers.map((n) => (
+            <div key={n}>{n}</div>
           ))}
         </div>
         <div className="message-code-body-scroll">
           <pre>
             <code>
-              {segments.map((seg, idx) =>
-                seg.className ? (
-                  <span key={idx} className={seg.className}>
-                    {seg.text}
-                  </span>
-                ) : (
-                  <span key={idx}>{seg.text}</span>
-                )
-              )}
+              {segments.map((seg, idx) => {
+                if (seg.className) {
+                  return (
+                    <span key={idx} className={seg.className}>
+                      {seg.text}
+                    </span>
+                  );
+                }
+                return <span key={idx}>{seg.text}</span>;
+              })}
             </code>
           </pre>
         </div>
@@ -333,8 +375,54 @@ function CodeBlock({ language, codeText }: { language: string; codeText: string 
   );
 }
 
-function FormattedContent({ text }: { text: string }) {
-  const lines = text.split("\n");
+function renderHeadingBlock(headingText: string, level: number, keyNum: number): JSX.Element {
+  const tagName = "h" + Math.min(level + 2, 6);
+  const HeadingTag = tagName as "h3";
+  return (
+    <HeadingTag className="message-heading" key={keyNum}>
+      {renderInlineSegments(headingText, "h" + keyNum)}
+    </HeadingTag>
+  );
+}
+
+function renderQuoteBlock(quoteLines: string[], keyNum: number): JSX.Element {
+  return (
+    <blockquote className="message-blockquote" key={keyNum}>
+      {quoteLines.map((l, idx) => (
+        <span key={idx}>
+          {renderInlineSegments(l, "bq" + keyNum + "-" + idx)}
+          {idx < quoteLines.length - 1 ? <br /> : null}
+        </span>
+      ))}
+    </blockquote>
+  );
+}
+
+function renderListBlock(items: string[], keyNum: number): JSX.Element {
+  return (
+    <ul className="message-list" key={keyNum}>
+      {items.map((item, idx) => (
+        <li key={idx}>{renderInlineSegments(item, "li" + keyNum + "-" + idx)}</li>
+      ))}
+    </ul>
+  );
+}
+
+function renderParagraphBlock(paraLines: string[], keyNum: number): JSX.Element {
+  return (
+    <p className="message-paragraph" key={keyNum}>
+      {paraLines.map((l, idx) => (
+        <span key={idx}>
+          {renderInlineSegments(l, "p" + keyNum + "-" + idx)}
+          {idx < paraLines.length - 1 ? <br /> : null}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function FormattedContent(props: { text: string }) {
+  const lines = props.text.split("\n");
   const blocks: JSX.Element[] = [];
   let i = 0;
   let key = 0;
@@ -342,49 +430,42 @@ function FormattedContent({ text }: { text: string }) {
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.trim().startsWith("```")) {
-      const language = line.trim().replace(/^```/, "").trim() || "text";
+    if (line.trim().indexOf("```") === 0) {
+      const language = line.trim().replace(/^```/, "").trim();
+      const languageOrDefault = language.length > 0 ? language : "text";
       const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+      i = i + 1;
+      while (i < lines.length && lines[i].trim().indexOf("```") !== 0) {
         codeLines.push(lines[i]);
-        i++;
+        i = i + 1;
       }
-      if (i < lines.length) i++;
-      blocks.push(<CodeBlock key={key++} language={language} codeText={codeLines.join("\n")} />);
+      if (i < lines.length) {
+        i = i + 1;
+      }
+      key = key + 1;
+      blocks.push(
+        <CodeBlock key={key} language={languageOrDefault} codeText={codeLines.join("\n")} />
+      );
       continue;
     }
 
     const headingMatch = /^(#{1,6})\s+(.*)$/.exec(line);
     if (headingMatch) {
       const level = headingMatch[1].length;
-      const HeadingTag = (`h${Math.min(level + 2, 6)}` as unknown) as "h3";
-      blocks.push(
-        <HeadingTag className="message-heading" key={key++}>
-          {renderInlineSegments(headingMatch[2], `h${key}`)}
-        </HeadingTag>
-      );
-      i++;
+      key = key + 1;
+      blocks.push(renderHeadingBlock(headingMatch[2], level, key));
+      i = i + 1;
       continue;
     }
 
-    if (line.trim().startsWith(">")) {
+    if (line.trim().indexOf(">") === 0) {
       const quoteLines: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith(">")) {
+      while (i < lines.length && lines[i].trim().indexOf(">") === 0) {
         quoteLines.push(lines[i].trim().replace(/^>\s?/, ""));
-        i++;
+        i = i + 1;
       }
-      const quoteKey = key++;
-      blocks.push(
-        <blockquote className="message-blockquote" key={quoteKey}>
-          {quoteLines.map((l, idx) => (
-            <span key={idx}>
-              {renderInlineSegments(l, `bq${quoteKey}-${idx}`)}
-              {idx < quoteLines.length - 1 && <br />}
-            </span>
-          ))}
-        </blockquote>
-      );
+      key = key + 1;
+      blocks.push(renderQuoteBlock(quoteLines, key));
       continue;
     }
 
@@ -392,59 +473,39 @@ function FormattedContent({ text }: { text: string }) {
       const items: string[] = [];
       while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
         items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
-        i++;
+        i = i + 1;
       }
-      const listKey = key++;
-      blocks.push(
-        <ul className="message-list" key={listKey}>
-          {items.map((item, idx) => (
-            <li key={idx}>{renderInlineSegments(item, `li${listKey}-${idx}`)}</li>
-          ))}
-        </ul>
-      );
+      key = key + 1;
+      blocks.push(renderListBlock(items, key));
       continue;
     }
 
-    if (line.trim() === "") {
-      i++;
+    if (line.trim().length === 0) {
+      i = i + 1;
       continue;
     }
 
     const paraLines: string[] = [];
     while (
       i < lines.length &&
-      lines[i].trim() !== "" &&
-      !lines[i].trim().startsWith("```") &&
-      !lines[i].trim().startsWith(">") &&
+      lines[i].trim().length > 0 &&
+      lines[i].trim().indexOf("```") !== 0 &&
+      lines[i].trim().indexOf(">") !== 0 &&
       !/^[-*]\s+/.test(lines[i].trim()) &&
       !/^#{1,6}\s+/.test(lines[i])
     ) {
       paraLines.push(lines[i]);
-      i++;
+      i = i + 1;
     }
-    const paraKey = key++;
-    blocks.push(
-      <p className="message-paragraph" key={paraKey}>
-        {paraLines.map((l, idx) => (
-          <span key={idx}>
-            {renderInlineSegments(l, `p${paraKey}-${idx}`)}
-            {idx < paraLines.length - 1 && <br />}
-          </span>
-        ))}
-      </p>
-    );
+    key = key + 1;
+    blocks.push(renderParagraphBlock(paraLines, key));
   }
 
   return <div className="message-assistant">{blocks}</div>;
 }
 
-function AttachmentListDialog({
-  attachments,
-  onClose,
-}: {
-  attachments: Attachment[];
-  onClose: () => void;
-}) {
+function AttachmentListDialog(props: { attachments: Attachment[]; onClose: () => void }) {
+  const { attachments, onClose } = props;
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
