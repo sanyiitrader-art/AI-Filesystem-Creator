@@ -76,7 +76,6 @@ function renderInlineSegments(text: string, keyPrefix: string): JSX.Element[] {
         </a>
       );
     }
-
     let node: JSX.Element = <>{seg.text}</>;
     if (seg.bold) node = <strong>{node}</strong>;
     if (seg.italic) node = <em>{node}</em>;
